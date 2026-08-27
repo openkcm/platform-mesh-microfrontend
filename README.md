@@ -1,5 +1,3 @@
-# OpenKCM: Our new open source project
-
 [![REUSE status](https://api.reuse.software/badge/github.com/openkcm/platform-mesh-microfrontend)](https://api.reuse.software/info/github.com/openkcm/platform-mesh-microfrontend)
 
 ## About this project
