@@ -1,0 +1,12 @@
+/* Minimal layout reset — UI5 ThemeProvider supplies the rest. */
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--sapBackgroundColor, #ffffff);
+  color: var(--sapTextColor, #000000);
+  font-family: var(--sapFontFamily);
+}
+
+* { box-sizing: border-box; }

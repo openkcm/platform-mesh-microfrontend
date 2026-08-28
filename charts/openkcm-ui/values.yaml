@@ -1,0 +1,52 @@
+## Image used for the OpenKCM UI nginx container.
+image:
+  registry: ghcr.io/apeirora
+  repository: openkcm-ui
+  tag: ""           # Defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+service:
+  type: ClusterIP
+  port: 80
+
+## Hostname under which the UI (and pm-content.json) will be served.
+## The portal must be able to reach this host; cross-origin reads are enabled in nginx.
+ingress:
+  enabled: true
+  className: traefik
+  host: openkcm-ui.example.com
+  tls:
+    enabled: true
+    secretName: openkcm-ui-tls
+  annotations: {}
+
+## URL of the workspace-aware GraphQL gateway. The Luigi context.graphqlUrl
+## flows into the UI as portalContext.crdGatewayApiUrl.
+graphql:
+  url: "/api/kubernetes-graphql-gateway/root/graphql"
+
+accountNamespace: default
+
+## Luigi navigation ordering. Platform Mesh account defaults use Dashboard=100,
+## Namespaces=110, Workspace Resources category=500, Marketplace=700, IAM=800.
+## Account-level OpenKCM is intentionally grouped so the Portal can place it
+## after existing category groups instead of before them.
+navigation:
+  accountOrder: 900
+  namespaceCategoryOrder: 900
+
+## Flag to render fixture data instead of querying KCP (handy for screenshots).
+fixtures:
+  enabled: false
