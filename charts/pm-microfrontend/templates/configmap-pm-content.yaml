@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform-mesh-microfrontend.fullname" . }}-content
+  labels:
+    {{- include "platform-mesh-microfrontend.labels" . | nindent 4 }}
+data:
+  pm-content.json: |-
+{{- $host := include "platform-mesh-microfrontend.externalUrl" . -}}
+{{- $navigation := .Values.navigation | default dict -}}
+{{- $accountOrder := (get $navigation "accountOrder" | default 900 | toString) -}}
+{{- $namespaceCategoryOrder := (get $navigation "namespaceCategoryOrder" | default 900 | toString) -}}
+{{- $tpl := .Files.Get "pm-content.json.tpl" -}}
+{{- $rendered := $tpl | replace "__HOST__" $host | replace "__GRAPHQL_URL__" .Values.graphql.url | replace "__ACCOUNT_NAMESPACE__" .Values.accountNamespace | replace "__ACCOUNT_NAV_ORDER__" $accountOrder -}}
+{{ $rendered | nindent 4 }}
+  pm-content-namespace.json: |-
+{{- $namespaceTpl := .Files.Get "pm-content-namespace.json.tpl" -}}
+{{- $namespaceRendered := $namespaceTpl | replace "__HOST__" $host | replace "__GRAPHQL_URL__" .Values.graphql.url | replace "__ACCOUNT_NAMESPACE__" .Values.accountNamespace | replace "__NAMESPACE_CATEGORY_ORDER__" $namespaceCategoryOrder -}}
+{{ $namespaceRendered | nindent 4 }}

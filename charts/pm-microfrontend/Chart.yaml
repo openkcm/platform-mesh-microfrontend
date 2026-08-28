@@ -1,0 +1,11 @@
+apiVersion: v2
+name: platform-mesh-microfrontend
+description: Platform Mesh portal microfrontend for key chain management (React + UI5 Web Components).
+type: application
+version: 0.10.9
+appVersion: 0.10.9
+home: https://github.com/openkcm/platform-mesh-microfrontend
+sources:
+  - https://github.com/openkcm/platform-mesh-microfrontend
+maintainers:
+  - name: OpenKCM

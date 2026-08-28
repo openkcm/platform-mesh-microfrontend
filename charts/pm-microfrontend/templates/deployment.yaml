@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "platform-mesh-microfrontend.fullname" . }}
+  labels:
+    {{- include "platform-mesh-microfrontend.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "platform-mesh-microfrontend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "platform-mesh-microfrontend.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/pm-content: {{ include (print $.Template.BasePath "/configmap-pm-content.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ui
+          image: {{ include "platform-mesh-microfrontend.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /index.html
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /index.html
+              port: http
+          volumeMounts:
+            - name: pm-content
+              mountPath: /usr/share/nginx/html/pm-content.json
+              subPath: pm-content.json
+            - name: pm-content
+              mountPath: /usr/share/nginx/html/pm-content-namespace.json
+              subPath: pm-content-namespace.json
+      volumes:
+        - name: pm-content
+          configMap:
+            name: {{ include "platform-mesh-microfrontend.fullname" . }}-content
+            items:
+              - key: pm-content.json
+                path: pm-content.json
+              - key: pm-content-namespace.json
+                path: pm-content-namespace.json
