@@ -1,7 +1,7 @@
-## Image used for the OpenKCM UI nginx container.
+## Image used for the microfrontend nginx container.
 image:
-  registry: ghcr.io/apeirora
-  repository: openkcm-ui
+  registry: ghcr.io/openkcm
+  repository: platform-mesh-microfrontend
   tag: ""           # Defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
@@ -21,15 +21,15 @@ service:
   type: ClusterIP
   port: 80
 
-## Hostname under which the UI (and pm-content.json) will be served.
+## Hostname under which the microfrontend (and pm-content.json) will be served.
 ## The portal must be able to reach this host; cross-origin reads are enabled in nginx.
 ingress:
   enabled: true
   className: traefik
-  host: openkcm-ui.example.com
+  host: platform-mesh-microfrontend.example.com
   tls:
     enabled: true
-    secretName: openkcm-ui-tls
+    secretName: platform-mesh-microfrontend-tls
   annotations: {}
 
 ## URL of the workspace-aware GraphQL gateway. The Luigi context.graphqlUrl

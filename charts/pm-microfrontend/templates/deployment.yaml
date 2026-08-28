@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "openkcm-ui.fullname" . }}
+  name: {{ include "platform-mesh-microfrontend.fullname" . }}
   labels:
-    {{- include "openkcm-ui.labels" . | nindent 4 }}
+    {{- include "platform-mesh-microfrontend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "openkcm-ui.selectorLabels" . | nindent 6 }}
+      {{- include "platform-mesh-microfrontend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "openkcm-ui.selectorLabels" . | nindent 8 }}
+        {{- include "platform-mesh-microfrontend.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/pm-content: {{ include (print $.Template.BasePath "/configmap-pm-content.yaml") . | sha256sum }}
     spec:
@@ -22,7 +22,7 @@ spec:
       {{- end }}
       containers:
         - name: ui
-          image: {{ include "openkcm-ui.image" . }}
+          image: {{ include "platform-mesh-microfrontend.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -47,7 +47,7 @@ spec:
       volumes:
         - name: pm-content
           configMap:
-            name: {{ include "openkcm-ui.fullname" . }}-content
+            name: {{ include "platform-mesh-microfrontend.fullname" . }}-content
             items:
               - key: pm-content.json
                 path: pm-content.json

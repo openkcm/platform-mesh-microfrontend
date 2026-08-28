@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "openkcm-ui.fullname" . }}
+  name: {{ include "platform-mesh-microfrontend.fullname" . }}
   labels:
-    {{- include "openkcm-ui.labels" . | nindent 4 }}
+    {{- include "platform-mesh-microfrontend.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -19,7 +19,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "openkcm-ui.fullname" . }}
+                name: {{ include "platform-mesh-microfrontend.fullname" . }}
                 port:
                   number: {{ .Values.service.port }}
   {{- if .Values.ingress.tls.enabled }}

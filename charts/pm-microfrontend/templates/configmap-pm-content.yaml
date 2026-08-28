@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "openkcm-ui.fullname" . }}-content
+  name: {{ include "platform-mesh-microfrontend.fullname" . }}-content
   labels:
-    {{- include "openkcm-ui.labels" . | nindent 4 }}
+    {{- include "platform-mesh-microfrontend.labels" . | nindent 4 }}
 data:
   pm-content.json: |-
-{{- $host := include "openkcm-ui.externalUrl" . -}}
+{{- $host := include "platform-mesh-microfrontend.externalUrl" . -}}
 {{- $navigation := .Values.navigation | default dict -}}
 {{- $accountOrder := (get $navigation "accountOrder" | default 900 | toString) -}}
 {{- $namespaceCategoryOrder := (get $navigation "namespaceCategoryOrder" | default 900 | toString) -}}

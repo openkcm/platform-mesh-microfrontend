@@ -1,5 +1,5 @@
 {
-  "name": "openkcm-ui-namespace",
+  "name": "platform-mesh-microfrontend-namespace",
   "luigiConfigFragment": {
     "data": {
       "nodes": [
