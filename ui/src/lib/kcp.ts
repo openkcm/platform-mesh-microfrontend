@@ -160,6 +160,39 @@ export const listDomainKeys = async (
   };
 };
 
+// Cluster-wide list (namespace omitted); the gateway must permit it.
+const ALL_DOMAINKEYS_QUERY = `
+  query AllDomainKeys {
+    operations_openkcm_io {
+      v1alpha1 {
+        DomainKeys {
+          items {
+            metadata { name namespace creationTimestamp }
+            spec { type tenantNameRef primaryRootKeyRef { apiGroup kind namespace name } fallbackRootKeyRefs { apiGroup kind namespace name } lifecycle }
+            status {
+              conditions { type status reason message lastTransitionTime }
+              operationId
+              reconciliationStatus { success message internalKeyId errors }
+              cryptoState { id version lifecycleState lastRotatedAt }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const listAllDomainKeys = async (
+  opts: KcpClientOptions
+): Promise<ResourceListSnapshot<DomainKey>> => {
+  if (fixturesEnabled()) return { items: fixtureDomainKeys(), resourceVersion: null };
+  const data = await graphqlFetch<DomainKeyListResponse>(opts, { query: ALL_DOMAINKEYS_QUERY });
+  return {
+    items: data.operations_openkcm_io?.v1alpha1?.DomainKeys?.items ?? [],
+    resourceVersion: null
+  };
+};
+
 /* ---------------------------- ServiceKey (L3) ------------------------------- */
 
 const SERVICEKEY_QUERY = `
@@ -198,6 +231,38 @@ export const listServiceKeys = async (
     query: SERVICEKEY_QUERY,
     variables: { ns: namespace }
   });
+  return {
+    items: data.operations_openkcm_io?.v1alpha1?.ServiceKeys?.items ?? [],
+    resourceVersion: null
+  };
+};
+
+const ALL_SERVICEKEYS_QUERY = `
+  query AllServiceKeys {
+    operations_openkcm_io {
+      v1alpha1 {
+        ServiceKeys {
+          items {
+            metadata { name namespace creationTimestamp }
+            spec { tenantNameRef domainKeyRef lifecycle }
+            status {
+              conditions { type status reason message lastTransitionTime }
+              operationId
+              reconciliationStatus { success message internalKeyId errors }
+              cryptoState { id version lifecycleState lastRotatedAt }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const listAllServiceKeys = async (
+  opts: KcpClientOptions
+): Promise<ResourceListSnapshot<ServiceKey>> => {
+  if (fixturesEnabled()) return { items: fixtureServiceKeys(), resourceVersion: null };
+  const data = await graphqlFetch<ServiceKeyListResponse>(opts, { query: ALL_SERVICEKEYS_QUERY });
   return {
     items: data.operations_openkcm_io?.v1alpha1?.ServiceKeys?.items ?? [],
     resourceVersion: null
@@ -642,6 +707,37 @@ export const listDataEncryptionKeys = async (
   const data = await graphqlFetch<DataEncryptionKeyListResponse>(opts, {
     query: DATAENCRYPTIONKEY_QUERY,
     variables: { ns: namespace }
+  });
+  return data.operations_openkcm_io?.v1alpha1?.DataEncryptionKeys?.items ?? [];
+};
+
+const ALL_DATAENCRYPTIONKEYS_QUERY = `
+  query AllDataEncryptionKeys {
+    operations_openkcm_io {
+      v1alpha1 {
+        DataEncryptionKeys {
+          items {
+            metadata { name namespace creationTimestamp }
+            spec { tenantNameRef serviceKeyRef kmip { attributes } lifecycle }
+            status {
+              conditions { type status reason message lastTransitionTime }
+              operationId
+              reconciliationStatus { success message internalKeyId errors }
+              cryptoState { id version lifecycleState lastRotatedAt }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const listAllDataEncryptionKeys = async (
+  opts: KcpClientOptions
+): Promise<DataEncryptionKey[]> => {
+  if (fixturesEnabled()) return fixtureDataEncryptionKeys();
+  const data = await graphqlFetch<DataEncryptionKeyListResponse>(opts, {
+    query: ALL_DATAENCRYPTIONKEYS_QUERY
   });
   return data.operations_openkcm_io?.v1alpha1?.DataEncryptionKeys?.items ?? [];
 };

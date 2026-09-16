@@ -54,6 +54,9 @@ import {
   deleteDomainKey,
   deleteRootKey,
   deleteServiceKey,
+  listAllDataEncryptionKeys,
+  listAllDomainKeys,
+  listAllServiceKeys,
   listDataEncryptionKeys,
   listDomainKeys,
   listRootKeys,
@@ -73,6 +76,7 @@ import {
   updateOpenBaoRootKey,
   type DesiredLifecycle,
   type KcpClientOptions,
+  type ResourceListSnapshot,
   type RootKeyProvider
 } from './lib/kcp';
 import type { DataEncryptionKey, DomainKey, RootKey, ServiceKey, Tenant } from './types';
@@ -1366,11 +1370,22 @@ const App = () => {
               listServiceKeys(accountClient, resourceNamespace),
               listDataEncryptionKeys(accountClient, resourceNamespace)
             ])
-          : [
-              { items: [], resourceVersion: null },
-              { items: [], resourceVersion: null },
-              [] as DataEncryptionKey[]
-            ];
+          : await Promise.all([
+              listAllDomainKeys(accountClient),
+              listAllServiceKeys(accountClient),
+              listAllDataEncryptionKeys(accountClient)
+            ]).catch(
+              (
+                e
+              ): [ResourceListSnapshot<DomainKey>, ResourceListSnapshot<ServiceKey>, DataEncryptionKey[]] => {
+                console.warn('account-level cross-namespace key list failed; showing root keys only', e);
+                return [
+                  { items: [], resourceVersion: null },
+                  { items: [], resourceVersion: null },
+                  []
+                ];
+              }
+            );
       if (generation !== reloadGenerationRef.current) return;
       setTenant(tenants[0]);
       setDomainKeys(dks.items);
@@ -1705,7 +1720,6 @@ const App = () => {
   };
 
   const openDkEditDialog = (dk: DomainKey) => {
-    if (!isNamespaceView) return;
     setDkEditing(dk);
     setDkName(dk.metadata.name);
     setDkType((dk.spec.type as 'Team' | 'BusinessUnit') || 'Team');
@@ -1728,7 +1742,6 @@ const App = () => {
   };
 
   const handleCreateDomainKey = async () => {
-    if (!resourceNamespace) return;
     if (!accountName) {
       setError('Cannot determine account name for tenantNameRef.');
       return;
@@ -1745,7 +1758,7 @@ const App = () => {
     try {
       if (dkEditing) {
         await updateDomainKeyRefs(accountClient, {
-          namespace: resourceNamespace,
+          namespace: domainKeyNamespace(dkEditing),
           name: dkEditing.metadata.name,
           primaryRootKey: primary,
           fallbackRootKeys: fallbacks
@@ -1755,6 +1768,10 @@ const App = () => {
         setSuccess(`Domain Key "${dkEditing.metadata.name}" updated.`);
         setDkName('');
         await reload();
+        return;
+      }
+      if (!resourceNamespace) {
+        setError('Cannot determine the namespace to create the Domain Key in.');
         return;
       }
       await createDomainKey(accountClient, {
@@ -2096,6 +2113,48 @@ const App = () => {
                       onDelete={() => setConfirmDelete({ kind: 'RootKey', rootKey: rk })}
                     />
                   ))}
+                </FlexBox>
+              )}
+
+              <SectionHeader tier="L2" count={domainKeys.length} />
+              <span style={{ fontSize: '0.8rem', color: 'var(--sapContent_LabelColor)', marginTop: '-0.25rem' }}>
+                Every Domain Key across this account&apos;s namespaces, and its Root Key link.
+              </span>
+              {domainKeys.length === 0 ? (
+                <MessageStrip design="Information" hideCloseButton>
+                  No Domain Keys exist in this account yet.
+                </MessageStrip>
+              ) : (
+                <FlexBox direction={FlexBoxDirection.Column} style={{ gap: '0.5rem' }}>
+                  {domainKeys.map((dk) => {
+                    const linked = dk.spec.primaryRootKeyRef;
+                    return (
+                      <FlexBox
+                        key={`${domainKeyNamespace(dk)}/${dk.metadata.name}`}
+                        alignItems={FlexBoxAlignItems.Center}
+                        justifyContent={FlexBoxJustifyContent.SpaceBetween}
+                        style={{
+                          gap: '0.75rem',
+                          padding: '0.5rem 0.75rem',
+                          border: '1px solid var(--sapList_BorderColor)',
+                          borderRadius: 'var(--sapElement_BorderCornerRadius)'
+                        }}
+                      >
+                        <FlexBox direction={FlexBoxDirection.Column} style={{ minWidth: 0 }}>
+                          <span style={{ fontWeight: 'bold' }}>{dk.metadata.name}</span>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--sapContent_LabelColor)' }}>
+                            {domainKeyNamespace(dk)}
+                          </span>
+                        </FlexBox>
+                        <span style={{ fontSize: '0.85rem' }}>
+                          {linked ? `Root Key: ${linked.name}` : 'Not linked'}
+                        </span>
+                        <Button design="Transparent" icon="chain-link" onClick={() => openDkEditDialog(dk)}>
+                          {linked ? 'Change link' : 'Link Root Key'}
+                        </Button>
+                      </FlexBox>
+                    );
+                  })}
                 </FlexBox>
               )}
             </>
