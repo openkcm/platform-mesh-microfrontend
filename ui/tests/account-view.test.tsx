@@ -627,6 +627,25 @@ it.each([0, 2, 6])('shows %i configured cards and compact rows for the remaining
   expect(screen.queryAllByText('Not configured')).toHaveLength(6 - count);
 });
 
+it('draws tiers as tinted chips and states as soft pills, with no coloured card edge', async () => {
+  const { L1_SLOTS } = await import('../src/lib/l1Slots');
+  const lifecycle = ['Active', 'PreActive', 'Failed'];
+  api.roots.mockResolvedValue(L1_SLOTS.slice(0, 3).map((slot, index) => ({
+    ...rootFixture, kind: slot.kind, metadata: {name: slot.name, namespace: 'default'},
+    spec: {...rootFixture.spec, configured: true},
+    status: {slotState: 'Configured', cryptoState: {lifecycleState: lifecycle[index]}}
+  })));
+  const {container} = render(<App/>); change(context('a'));
+  await screen.findByText('3 configured roots / 6 slots');
+  const tones = ['status-positive', 'status-critical', 'status-negative'];
+  const pills = [...container.querySelectorAll('.key-card-header .status-pill')];
+  expect(pills.map((pill) => [pill.textContent, tones.find((tone) => pill.classList.contains(tone))])).toEqual([
+    ['Active', 'status-positive'], ['PreActive', 'status-critical'], ['Failed', 'status-negative']
+  ]);
+  expect(container.querySelector('.key-card-accent')).toBeNull();
+  expect(container.querySelector('.section-header .tier-badge.tier-l1')?.textContent).toBe('L1');
+});
+
 it('places available providers after configured roots and retains their configure action', async () => {
   api.roots.mockResolvedValue([rootFixture, {...rootFixture, kind:'AzureRootKey', metadata:{name:'azure',namespace:'default'}, spec:{configured:true}, status:{slotState:'Configured'}}]);
   render(<App/>); change(context('a'));

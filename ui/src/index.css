@@ -11,6 +11,16 @@ html, body, #root {
 
 * { box-sizing: border-box; }
 
+/* Shape: one 6px radius for cards, buttons, fields, popovers and dialogs. `html:root` outranks the theme's `:root`. */
+html:root {
+  --sapElement_BorderCornerRadius: 0.375rem;
+  --sapGroup_BorderCornerRadius: 0.375rem;
+  --sapTile_BorderCornerRadius: 0.375rem;
+  --sapButton_BorderCornerRadius: 0.375rem;
+  --sapField_BorderCornerRadius: 0.375rem;
+  --sapPopover_BorderCornerRadius: 0.375rem;
+}
+
 ui5-dialog ui5-input,
 ui5-dialog ui5-select,
 ui5-dialog ui5-segmented-button {
@@ -99,6 +109,8 @@ ui5-option[selected] {
 
 .page {
   container: page / inline-size;
+  /* Width of the lead track (tier chip or provider icon) shared by section headers and key cards. */
+  --key-lead: 3.75rem;
 }
 
 .ellipsis {
@@ -117,25 +129,20 @@ ui5-option[selected] {
   color: var(--sapContent_LabelColor);
 }
 
+/* One uniform hairline and a soft shadow; the tier is told by its chip, never by a coloured edge. */
 .key-card {
   min-width: 0;
   width: 100%;
+  border: 1px solid var(--sapGroup_ContentBorderColor);
+  box-shadow: 0 1px 2px rgba(34, 53, 72, 0.1);
 }
 
-/* Keep the accent inside the UI5 card's rounded content clip. */
 .key-card-content {
   position: relative;
 }
 
-.key-card-accent {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  pointer-events: none;
-}
-
 .key-card-header {
-  padding: 0.75rem 1rem 0.75rem 1.25rem;
+  padding: 0.75rem 1rem;
 }
 
 /* The body starts where the card title starts: header padding, lead track and gap. */
@@ -143,14 +150,14 @@ ui5-option[selected] {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 0.75rem 1rem 0.875rem 4rem;
-  border-top: 1px solid var(--sapGroup_TitleBorderColor);
+  padding: 0.75rem 1rem 0.875rem calc(1rem + var(--key-lead) + 0.75rem);
+  border-top: 1px solid var(--sapGroup_ContentBorderColor);
 }
 
 /* Let each action group use its full width beside the status. */
 .key-header {
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) max-content max-content;
+  grid-template-columns: var(--key-lead) minmax(0, 1fr) max-content max-content;
   grid-template-areas: 'lead title status actions';
   align-items: center;
   column-gap: 0.75rem;
@@ -175,16 +182,10 @@ ui5-option[selected] {
   font-weight: 700;
 }
 
-.key-header div.key-status {
+.key-header .key-status {
   grid-area: status;
   min-width: 6.5rem;
   height: 1.625rem;
-  padding-block: 0;
-  text-align: center;
-}
-
-.key-header div.key-status [data-component-name='ObjectStatusTextContainer'] {
-  line-height: 1.625rem;
 }
 
 .key-actions {
@@ -245,7 +246,7 @@ ui5-option[selected] {
 
 .key-ref {
   display: grid;
-  grid-template-columns: 1.75rem minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   column-gap: 0.5rem;
 }
@@ -285,7 +286,7 @@ ui5-option[selected] {
   padding: 0 0.5rem 0 0.75rem;
   border-radius: var(--sapElement_BorderCornerRadius);
   background: var(--sapBackgroundColor);
-  box-shadow: inset 0 0 0 1px var(--sapGroup_TitleBorderColor);
+  box-shadow: inset 0 0 0 1px var(--sapGroup_ContentBorderColor);
 }
 
 .key-children-header {
@@ -304,7 +305,7 @@ ui5-option[selected] {
 
 .key-child {
   padding: 0.375rem 0;
-  border-top: 1px solid var(--sapGroup_TitleBorderColor);
+  border-top: 1px solid var(--sapGroup_ContentBorderColor);
 }
 
 .key-child .key-header {
@@ -323,12 +324,12 @@ ui5-option[selected] {
 
 .section-header {
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  grid-template-columns: var(--key-lead) minmax(0, 1fr) auto;
   grid-template-areas: 'lead title action';
   align-items: center;
   column-gap: 0.75rem;
   margin-top: 0.5rem;
-  padding: 0 1rem 0 1.25rem;
+  padding: 0 1rem;
 }
 
 .section-title {
@@ -337,6 +338,7 @@ ui5-option[selected] {
   align-items: baseline;
   gap: 0.6rem;
   min-width: 0;
+  --sapFontHeader3Size: 1.125rem;
 }
 
 .section-header > ui5-button {
@@ -345,7 +347,7 @@ ui5-option[selected] {
 
 .namespace-group {
   margin-top: 0.25rem;
-  padding-left: 4rem;
+  padding-left: calc(1rem + var(--key-lead) + 0.75rem);
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--sapContent_LabelColor);
@@ -379,7 +381,7 @@ ui5-option[selected] {
   }
 
   .key-card-body {
-    padding-left: 1.25rem;
+    padding-left: 1rem;
   }
 }
 
@@ -413,16 +415,17 @@ ui5-option[selected] {
   }
 
   .namespace-group {
-    padding-left: 1.25rem;
+    padding-left: 1rem;
   }
 }
 
 
 .l1-root-cards { display: grid; gap: 0.75rem; }
 .l1-available {
-  border: 1px solid var(--sapGroup_TitleBorderColor);
+  border: 1px solid var(--sapGroup_ContentBorderColor);
   border-radius: var(--sapElement_BorderCornerRadius, 0.5rem);
   background: var(--sapGroup_ContentBackground);
+  box-shadow: 0 1px 2px rgba(34, 53, 72, 0.1);
   overflow: hidden;
 }
 .l1-available h3 { margin: 0; padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--sapContent_LabelColor); }
@@ -432,9 +435,76 @@ ui5-option[selected] {
   flex-wrap: wrap;
   gap: 0.5rem 0.75rem;
   padding: 0.375rem 1rem;
-  min-height: 2.25rem;
-  border-top: 1px solid var(--sapGroup_TitleBorderColor);
+  min-height: 2.375rem;
+  border-top: 1px solid var(--sapGroup_ContentBorderColor);
 }
 .l1-empty-provider { font-size: 0.875rem; font-weight: 700; min-width: 4.5rem; }
 .l1-empty-state { font-size: 0.8125rem; color: var(--sapContent_LabelColor); }
 .l1-empty-configure { margin-left: auto; }
+
+/* Tier chip: a tinted fill, a 1px edge, dark text of the same hue and a level glyph (the filled bar is the level). */
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  height: 1.375rem;
+  padding: 0 0.5rem 0 0.4375rem;
+  border: 1px solid var(--tier-line);
+  border-radius: 0.3125rem;
+  background: var(--tier-tint);
+  color: var(--tier-text);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tier-badge::before {
+  content: '';
+  width: 18px;
+  height: 10px;
+  flex: none;
+  background: linear-gradient(90deg,
+    var(--tier-bar1) 0 3px, transparent 3px 5px, var(--tier-bar2) 5px 8px, transparent 8px 10px,
+    var(--tier-bar3) 10px 13px, transparent 13px 15px, var(--tier-bar4) 15px 18px);
+}
+.tier-badge {
+  --tier-off: rgba(15, 23, 42, 0.16);
+  --tier-bar1: var(--tier-off);
+  --tier-bar2: var(--tier-off);
+  --tier-bar3: var(--tier-off);
+  --tier-bar4: var(--tier-off);
+}
+.tier-l1 { --tier-tint: #faf3d9; --tier-line: #ebdca5; --tier-text: #725a0a; --tier-bar1: #c19a2a; }
+.tier-l2 { --tier-tint: #fbe9ef; --tier-line: #f0c3d2; --tier-text: #8f2b52; --tier-bar2: #cc5b82; }
+.tier-l3 { --tier-tint: #eeecfa; --tier-line: #d2cdf0; --tier-text: #463c9a; --tier-bar3: #6a5fc1; }
+.tier-l4 { --tier-tint: #e0f2f6; --tier-line: #b0dbe5; --tier-text: #14677a; --tier-bar4: #1f93a6; }
+
+/* State pill: tinted fill, dark text of the same hue and a dot. */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 1.5rem;
+  padding: 0 0.625rem 0 0.5rem;
+  border-radius: 0.75rem;
+  background: var(--sapNeutralBackground);
+  color: var(--sapTextColor);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  --pill-dot: var(--sapNeutralElementColor);
+}
+.status-pill::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--pill-dot);
+}
+.status-positive { background: var(--sapSuccessBackground); color: var(--sapPositiveTextColor); --pill-dot: var(--sapPositiveElementColor); }
+.status-critical { background: var(--sapWarningBackground); color: var(--sapCriticalTextColor); --pill-dot: var(--sapCriticalElementColor); }
+.status-negative { background: var(--sapErrorBackground); color: var(--sapNegativeTextColor); --pill-dot: var(--sapNegativeElementColor); }

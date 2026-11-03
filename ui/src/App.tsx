@@ -15,7 +15,6 @@ import {
   Input,
   Label,
   MessageStrip,
-  ObjectStatus,
   Option,
   Popover,
   SegmentedButton,
@@ -123,6 +122,17 @@ const lifecycleObjectState = (
   return 'None';
 };
 
+// A state is a soft pill: tinted background, dark text of the same hue, and a dot.
+const StatusPill = ({
+  state, className, children
+}: {
+  state: ReturnType<typeof lifecycleObjectState>;
+  className?: string;
+  children: React.ReactNode;
+}) => (
+  <span className={`status-pill status-${state.toLowerCase()}${className ? ` ${className}` : ''}`}>{children}</span>
+);
+
 const selectedValue = (
   e: { detail: { selectedOption: { dataset: DOMStringMap } | null } }
 ): string => e.detail.selectedOption?.dataset?.value ?? '';
@@ -147,13 +157,6 @@ const mergeRootKeys = (roots: RootKey[]): RootKey[] => {
 
 type Tier = 'L1' | 'L2' | 'L3' | 'L4';
 
-const TIER_ACCENT: Record<Tier, string> = {
-  L1: 'var(--sapAccentColor1)',
-  L2: 'var(--sapAccentColor3)',
-  L3: 'var(--sapAccentColor5)',
-  L4: 'var(--sapAccentColor7)'
-};
-
 const TIER_LABEL: Record<Tier, string> = {
   L1: 'Root Key',
   L2: 'Domain Key',
@@ -161,25 +164,9 @@ const TIER_LABEL: Record<Tier, string> = {
   L4: 'Data Key'
 };
 
+// A tier is told by a hue, a level glyph (the filled bar is the level) and its name; see .tier-badge.
 const TierBadge = ({ tier }: { tier: Tier }) => (
-  <span
-    title={`${tier} · ${TIER_LABEL[tier]}`}
-    style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minWidth: '1.75rem',
-      height: '1.1rem',
-      padding: '0 0.4rem',
-      borderRadius: '0.55rem',
-      background: TIER_ACCENT[tier],
-      color: '#fff',
-      fontSize: '0.65rem',
-      fontWeight: 700,
-      letterSpacing: '0.05em',
-      flexShrink: 0
-    }}
-  >
+  <span title={`${tier} · ${TIER_LABEL[tier]}`} className={`tier-badge tier-${tier.toLowerCase()}`}>
     {tier}
   </span>
 );
@@ -299,14 +286,14 @@ const TierTile = ({
       <FlexBox alignItems={FlexBoxAlignItems.Center} style={{ gap: '0.5rem' }}>
         <span style={{ fontSize: '1.5rem', fontWeight: 600 }}>{count}</span>
         {activeCount !== undefined && count > 0 && (
-          <ObjectStatus state={dotState} inverted>
+          <StatusPill state={dotState}>
             {activeCount}/{count} active
-          </ObjectStatus>
+          </StatusPill>
         )}
         {pendingCount !== undefined && pendingCount > 0 && (
-          <ObjectStatus state="Critical" inverted>
+          <StatusPill state="Critical">
             {pendingCount} pending
-          </ObjectStatus>
+          </StatusPill>
         )}
       </FlexBox>
     </FlexBox>
@@ -351,7 +338,8 @@ const AccountHeader = ({
       direction={FlexBoxDirection.Column}
       style={{
         background: 'var(--sapObjectHeader_Background)',
-        boxShadow: 'inset 0 0 0 1px var(--sapGroup_TitleBorderColor)',
+        border: '1px solid var(--sapGroup_ContentBorderColor)',
+        boxShadow: '0 1px 2px rgba(34, 53, 72, 0.1)',
         borderRadius: 'var(--sapElement_BorderCornerRadius)',
         padding: '1rem 1.25rem',
         gap: '0.85rem'
@@ -368,9 +356,9 @@ const AccountHeader = ({
               {tenant?.metadata.name ?? '-'}
             </Title>
             {tenantReady && (
-              <ObjectStatus state={tenantReady.status === 'True' ? 'Positive' : 'Critical'} inverted>
+              <StatusPill state={tenantReady.status === 'True' ? 'Positive' : 'Critical'}>
                 {tenantReady.status === 'True' ? 'Registered' : tenantReady.status}
-              </ObjectStatus>
+              </StatusPill>
             )}
             {tenant?.spec.region && (
               <span style={{ fontSize: '0.75rem', color: 'var(--sapContent_LabelColor)' }}>
@@ -397,7 +385,7 @@ const AccountHeader = ({
           gap: '0.85rem',
           flexWrap: 'wrap',
           paddingTop: '0.6rem',
-          borderTop: '1px solid var(--sapGroup_TitleBorderColor)'
+          borderTop: '1px solid var(--sapGroup_ContentBorderColor)'
         }}
       >
         <TierTile tier="L1" count={rootKeys.length} activeCount={activeRoots} />
@@ -421,6 +409,14 @@ const stepAccent = (state: StepState) => {
   if (state === 'next') return 'var(--sapInformativeColor)';
   if (state === 'in-progress') return 'var(--sapCriticalColor)';
   return 'var(--sapNeutralColor)';
+};
+
+// The step number reads as a state: tinted ring when finished or running, action colour when it is next.
+const stepDot = (state: StepState): React.CSSProperties => {
+  if (state === 'done') return { background: 'var(--sapSuccessBackground)', border: '2px solid var(--sapPositiveElementColor)', color: 'var(--sapPositiveTextColor)' };
+  if (state === 'next') return { background: 'var(--sapButton_Emphasized_Background)', border: '2px solid var(--sapButton_Emphasized_Background)', color: 'var(--sapButton_Emphasized_TextColor)' };
+  if (state === 'in-progress') return { background: 'var(--sapWarningBackground)', border: '2px solid var(--sapCriticalElementColor)', color: 'var(--sapCriticalTextColor)' };
+  return { background: 'var(--sapGroup_ContentBackground)', border: '2px solid var(--sapNeutralBorderColor)', color: 'var(--sapContent_LabelColor)' };
 };
 
 const OnboardingStep = ({
@@ -455,10 +451,9 @@ const OnboardingStep = ({
       style={{
         flex: '1 1 240px',
         minWidth: 240,
-        padding: '1rem 1rem 1rem calc(1rem + 4px)',
-        border: `1px solid ${isNext || isInProgress ? accent : 'var(--sapGroup_TitleBorderColor)'}`,
+        padding: '1rem',
+        border: `1px solid ${isNext || isInProgress ? accent : 'var(--sapGroup_ContentBorderColor)'}`,
         borderRadius: 'var(--sapElement_BorderCornerRadius)',
-        boxShadow: `inset 4px 0 0 ${accent}`,
         background: isNext
           ? 'var(--sapInfobar_Background)'
           : isInProgress
@@ -476,10 +471,10 @@ const OnboardingStep = ({
             width: '1.5rem',
             height: '1.5rem',
             borderRadius: '50%',
-            background: accent,
-            color: '#fff',
+            boxSizing: 'border-box',
             fontWeight: 700,
-            fontSize: '0.75rem'
+            fontSize: '0.75rem',
+            ...stepDot(state)
           }}
         >
           {isDone ? <Icon name="accept" style={{ width: '0.85rem', height: '0.85rem' }} /> : n}
@@ -487,16 +482,8 @@ const OnboardingStep = ({
         <Title level="H6" style={{ margin: 0 }}>
           {title}
         </Title>
-        {isInProgress && (
-          <ObjectStatus state="Critical" inverted>
-            in progress
-          </ObjectStatus>
-        )}
-        {isDone && (
-          <ObjectStatus state="Positive" inverted>
-            done
-          </ObjectStatus>
-        )}
+        {isInProgress && <StatusPill state="Critical">in progress</StatusPill>}
+        {isDone && <StatusPill state="Positive">done</StatusPill>}
       </FlexBox>
       <span style={{ fontSize: '0.8rem', color: 'var(--sapContent_LabelColor)' }}>
         {description}
@@ -735,9 +722,9 @@ const KeyHeader = ({
       <Truncate text={name} className="key-name" />
       {subtitle && <Truncate text={subtitle} className="muted" />}
     </div>
-    <ObjectStatus className="key-status" state={lifecycleObjectState(lifecycle)} inverted>
+    <StatusPill className="key-status" state={lifecycleObjectState(lifecycle)}>
       {lifecycle}
-    </ObjectStatus>
+    </StatusPill>
     <div className="key-actions">{actions}</div>
   </div>
 );
@@ -749,7 +736,6 @@ const KeyCard = ({
 }: React.ComponentProps<typeof KeyHeader> & { tier: Tier; children?: React.ReactNode }) => (
   <Card data-tier={tier} className="key-card">
     <div className="key-card-content">
-      <span aria-hidden className="key-card-accent" style={{ background: TIER_ACCENT[tier] }} />
       <div className="key-card-header">
         <KeyHeader {...header} />
       </div>
