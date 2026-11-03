@@ -4,6 +4,32 @@
 
 OpenKCM MicroFrontend for [Platform Mesh](https://platform-mesh.io/) Dashboard. MicroFrontend facilitates Key Chain Management directly in the Platform Mesh Dashboard.
 
+## Repository layout
+
+| Path | Content |
+|---|---|
+| `ui/` | The UI: Vite, React and UI5 Web Components. The portal loads it as a Luigi micro frontend in an iframe. It reads and writes the `operations.openkcm.io` resources through the portal's GraphQL gateway. |
+| `charts/platform-mesh-ui/` | Helm chart: the nginx deployment, the ingress, and the content file `pm-content.json` that the portal loads. |
+| `Dockerfile.ui` | The image of the UI. It is built from the repository root. |
+
+The UI and the chart were imported from [apeirora/showroom-msp-openkcm](https://github.com/apeirora/showroom-msp-openkcm) at release 0.17.6 (commit `0c27ba0`).
+
+## Development
+
+```sh
+cd ui
+npm ci
+npm test            # unit tests
+npm run build       # type-check and production build
+npm run dev         # local dev server
+
+helm lint charts/platform-mesh-ui
+```
+
+## Release
+
+`release-please.yml` keeps a release PR open on `main`. Merging it creates the tag `vX.Y.Z`, and the tag starts `release.yml`: it builds the image from `Dockerfile.ui`, pushes it to `ghcr.io/openkcm/images/platform-mesh-microfrontend:vX.Y.Z`, then packages the chart `platform-mesh-ui` under the version `X.Y.Z` and pushes it to `oci://ghcr.io/openkcm/charts`. To test without pushing, run the `Release` workflow by hand with `dry_run` on. The workflows that called the shared pipeline of `openkcm/build` are in `.github/workflows-disabled/`.
+
 ## Support, Feedback, Contributing
 
 This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/openkcm/platform-mesh-microfrontend/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](CONTRIBUTING.md).

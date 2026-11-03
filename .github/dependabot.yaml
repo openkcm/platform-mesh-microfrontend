@@ -11,6 +11,13 @@ updates:
     schedule:
       interval: daily
     open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /ui
+    reviewers:
+      - "openkcm/go-maintainers"
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 5
   - package-ecosystem: docker
     directory: /
     reviewers:

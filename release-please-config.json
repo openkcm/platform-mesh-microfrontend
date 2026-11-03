@@ -48,7 +48,17 @@
   "packages": {
     ".": {
       "release-type": "go",
-      "bump-minor-pre-major": true
+      "bump-minor-pre-major": true,
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "charts/platform-mesh-ui/Chart.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "charts/platform-mesh-ui/values.yaml"
+        }
+      ]
     }
   },
   "changelog": {
