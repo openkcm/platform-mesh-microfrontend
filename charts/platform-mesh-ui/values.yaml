@@ -2,7 +2,7 @@
 image:
   registry: ghcr.io/openkcm/images
   repository: platform-mesh-microfrontend
-  tag: v0.12.0 # x-release-please-version
+  tag: v0.12.1 # x-release-please-version
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
