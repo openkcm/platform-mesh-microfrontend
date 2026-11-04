@@ -11,4 +11,5 @@ includes:
     vars:
       CODE_DIRS: ""
       COMPONENTS: 'ui'
-      CHART_COMPONENTS: ''
+      CHART_COMPONENTS: 'platform-mesh-ui'
+      DOCKER_FILE_IDENTIFIER: 'ui'

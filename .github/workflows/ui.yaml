@@ -1,0 +1,64 @@
+name: UI
+
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test and build the UI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install the dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Type-check the sources and tests
+        run: npm run typecheck
+
+      - name: Run the tests
+        run: npm test
+
+      - name: Type-check and build
+        run: npm run build
+
+  chart:
+    name: Lint and render the chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Install Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v3.22.0
+
+      - name: Lint the chart
+        run: helm lint charts/platform-mesh-ui
+
+      - name: Render the chart
+        run: helm template ui charts/platform-mesh-ui --set ingress.host=openkcm-ui.example.com > /dev/null

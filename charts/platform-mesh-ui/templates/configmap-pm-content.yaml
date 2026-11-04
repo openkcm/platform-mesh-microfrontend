@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform-mesh-ui.fullname" . }}-content
+  labels:
+    {{- include "platform-mesh-ui.labels" . | nindent 4 }}
+data:
+  pm-content.json: |-
+{{- $host := include "platform-mesh-ui.externalUrl" . -}}
+{{- $navigation := .Values.navigation | default dict -}}
+{{- $accountOrder := (get $navigation "accountOrder" | default 900 | toString) -}}
+{{- $tpl := .Files.Get "pm-content.json.tpl" -}}
+{{- $iamUi := .Values.iamUi | default dict -}}
+{{- $iamBaseUrl := (get $iamUi "baseUrl" | default "/ui/iam/ui/" | trimSuffix "/" | printf "%s/") -}}
+{{- $rendered := $tpl | replace "__HOST__" $host | replace "__IAM_UI_BASE_URL__" $iamBaseUrl | replace "__GRAPHQL_URL__" .Values.graphql.url | replace "__ACCOUNT_NAMESPACE__" .Values.accountNamespace | replace "__ACCOUNT_NAV_ORDER__" $accountOrder -}}
+{{ $rendered | nindent 4 }}
