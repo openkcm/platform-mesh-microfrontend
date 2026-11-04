@@ -28,7 +28,7 @@ helm lint charts/platform-mesh-ui
 
 ## Release
 
-`release-please.yml` keeps a release PR open on `main`. Merging it creates the tag `vX.Y.Z`, and the tag starts `release.yml`: it builds the image from `Dockerfile.ui`, pushes it to `ghcr.io/openkcm/images/platform-mesh-microfrontend:vX.Y.Z`, then packages the chart `platform-mesh-ui` under the version `X.Y.Z` and pushes it to `oci://ghcr.io/openkcm/charts`. To test without pushing, run the `Release` workflow by hand with `dry_run` on. The workflows that called the shared pipeline of `openkcm/build` are in `.github/workflows-disabled/`.
+The release uses the shared workflows of `openkcm/build`. Every push to `main` keeps a release PR open. It bumps the chart version, `appVersion` and `image.tag` (the lines marked `x-release-please-version`); merging it pushes the chart `platform-mesh-ui` to `oci://ghcr.io/openkcm/charts` and creates the tag `vX.Y.Z`. The tag builds the image from `Dockerfile.ui` and pushes it to `ghcr.io/openkcm/images/platform-mesh-microfrontend:vX.Y.Z`.
 
 ## Support, Feedback, Contributing
 
