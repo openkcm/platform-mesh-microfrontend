@@ -19,5 +19,7 @@ env:
 
 jobs:
   released:
-    uses: openkcm/build/.github/workflows/publish.svc.yaml@main
+    uses: openkcm/build/.github/workflows/publish.ui.yaml@main
+    with:
+      image_signing_enabled: true
     secrets: inherit
