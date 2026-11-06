@@ -6,7 +6,7 @@ COPY ui/tsconfig.json ui/vite.config.ts ui/index.html ./
 COPY ui/src ./src
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
 LABEL org.opencontainers.image.source=https://github.com/openkcm/platform-mesh-microfrontend
 LABEL org.opencontainers.image.title=platform-mesh-microfrontend
 COPY --from=build /app/dist/ /usr/share/nginx/html/
