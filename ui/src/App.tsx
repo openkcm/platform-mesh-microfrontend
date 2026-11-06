@@ -32,13 +32,14 @@ import '@ui5/webcomponents-icons/dist/key-user-settings.js';
 import '@ui5/webcomponents-icons/dist/chain-link.js';
 import '@ui5/webcomponents-icons/dist/hint.js';
 import '@ui5/webcomponents-icons/dist/sys-add.js';
+import '@ui5/webcomponents-icons/dist/collapse-all.js';
+import '@ui5/webcomponents-icons/dist/expand-all.js';
 import '@ui5/webcomponents-icons/dist/accept.js';
 import '@ui5/webcomponents-icons/dist/decline.js';
 import '@ui5/webcomponents-icons/dist/edit.js';
 import '@ui5/webcomponents-icons/dist/copy.js';
 import '@ui5/webcomponents-icons/dist/broken-link.js';
 import '@ui5/webcomponents-icons/dist/slim-arrow-down.js';
-import '@ui5/webcomponents-icons/dist/slim-arrow-right.js';
 import { registerIcon } from '@ui5/webcomponents-base/dist/asset-registries/Icons.js';
 
 import { L1_SLOTS, managedSlot, canConfigureSlot, canResetSlot, configuredRoot, resetPending, slotBusy } from './lib/l1Slots';
@@ -104,6 +105,31 @@ const ROOT_KEY_DIALOG_WIDTH = 'min(30rem, 80vw)';
 const CONFIRM_DIALOG_WIDTH = 'min(26rem, 80vw)';
 const NAME_HINT = 'Lowercase letters, digits and dashes.';
 const COPY_FEEDBACK_MS = 1500;
+type SectionTier = 'L1' | 'L2' | 'L3';
+const SECTION_TIERS: SectionTier[] = ['L1', 'L2', 'L3'];
+const COLLAPSE_MS = 200;
+const NONE_COLLAPSED: Record<SectionTier, boolean> = { L1: false, L2: false, L3: false };
+const sectionStorageKey = (tier: SectionTier) => `openkcm.section.${tier}.collapsed`;
+
+const readCollapsedSections = (): Record<SectionTier, boolean> => {
+  try {
+    return {
+      L1: sessionStorage.getItem(sectionStorageKey('L1')) === '1',
+      L2: sessionStorage.getItem(sectionStorageKey('L2')) === '1',
+      L3: sessionStorage.getItem(sectionStorageKey('L3')) === '1'
+    };
+  } catch {
+    return NONE_COLLAPSED;
+  }
+};
+
+const writeCollapsedSections = (sections: Record<SectionTier, boolean>) => {
+  try {
+    for (const tier of SECTION_TIERS) sessionStorage.setItem(sectionStorageKey(tier), sections[tier] ? '1' : '0');
+  } catch {
+    return;
+  }
+};
 const DOMAIN_KEY_SCOPES: DomainKeyScope[] = ['System', 'Namespace', 'Instance'];
 const SCOPE_HINTS: Partial<Record<DomainKeyScope, string>> = {
   System: 'Shared by every namespace in this account.',
@@ -707,12 +733,14 @@ const KeyHeader = ({
   lead,
   name,
   subtitle,
+  namespaceLabel,
   lifecycle,
   actions
 }: {
   lead: React.ReactNode;
   name: string;
   subtitle?: string;
+  namespaceLabel?: string;
   lifecycle: string;
   actions: React.ReactNode;
 }) => (
@@ -721,6 +749,7 @@ const KeyHeader = ({
     <div className="key-title">
       <Truncate text={name} className="key-name" />
       {subtitle && <Truncate text={subtitle} className="muted" />}
+      {namespaceLabel && <Truncate text={`Namespace: ${namespaceLabel}`} className="muted" />}
     </div>
     <StatusPill className="key-status" state={lifecycleObjectState(lifecycle)}>
       {lifecycle}
@@ -732,14 +761,21 @@ const KeyHeader = ({
 const KeyCard = ({
   tier,
   children,
+  collapsed,
   ...header
-}: React.ComponentProps<typeof KeyHeader> & { tier: Tier; children?: React.ReactNode }) => (
+}: React.ComponentProps<typeof KeyHeader> & { tier: Tier; children?: React.ReactNode; collapsed?: boolean }) => (
   <Card data-tier={tier} className="key-card">
     <div className="key-card-content">
       <div className="key-card-header">
         <KeyHeader {...header} />
       </div>
-      {children && <div className="key-card-body">{children}</div>}
+      {collapsed === undefined ? (
+        children && <div className="key-card-body">{children}</div>
+      ) : (
+        <Collapse open={!collapsed}>
+          <div className="key-card-body">{children}</div>
+        </Collapse>
+      )}
     </div>
   </Card>
 );
@@ -777,6 +813,7 @@ const Chip = ({ text, kind }: { text: string; kind?: string }) => (
 
 const ServiceKeyCard = ({
   sk,
+  namespaceLabel,
   parent,
   deks,
   busyAction,
@@ -789,6 +826,7 @@ const ServiceKeyCard = ({
   canAddDek
 }: {
   sk: ServiceKey;
+  namespaceLabel?: string;
   parent?: DomainKey;
   deks: DataEncryptionKey[];
   busyAction: BusyActionKind;
@@ -806,7 +844,7 @@ const ServiceKeyCard = ({
       tier="L3"
       lead={<TierBadge tier="L3" />}
       name={sk.metadata.name}
-      subtitle={sk.metadata.namespace ? `Namespace: ${sk.metadata.namespace}` : undefined}
+      namespaceLabel={namespaceLabel}
       lifecycle={lifecycle}
       actions={
         <>
@@ -1082,6 +1120,7 @@ const RootKeyCard = ({
 const DomainKeyCard = ({
   domainKey,
   namespace,
+  namespaceLabel,
   servedBy,
   rootKeys,
   accountNamespace,
@@ -1094,6 +1133,7 @@ const DomainKeyCard = ({
 }: {
   domainKey: DomainKey;
   namespace: string;
+  namespaceLabel?: string;
   servedBy?: string;
   rootKeys: RootKey[];
   accountNamespace: string;
@@ -1139,7 +1179,9 @@ const DomainKeyCard = ({
       lead={<TierBadge tier="L2" />}
       name={domainKey.metadata.name}
       subtitle={scopeLabel(domainKey)}
+      namespaceLabel={namespaceLabel}
       lifecycle={lifecycle}
+      collapsed={collapsed}
       actions={
         <>
           <Button onClick={onDetailDk}>Details</Button>
@@ -1163,70 +1205,126 @@ const DomainKeyCard = ({
             </>
           )}
           <Button
+            className="card-toggle"
+            data-collapsed={collapsed}
             design="Transparent"
-            icon={collapsed ? 'slim-arrow-right' : 'slim-arrow-down'}
+            icon="slim-arrow-down"
             onClick={toggleCollapsed}
             tooltip={collapsed ? 'Expand' : 'Collapse'}
           />
         </>
       }
     >
-      {!collapsed && (
-        <>
-          <ProblemStrip ready={conditionByType(domainKey.status?.conditions, 'Ready')} />
-          <div className="key-facts">
-            <Fact area="id" label="Key ID">
-              <CopyableId id={domainKey.status?.cryptoState?.id} />
-            </Fact>
-            <Fact area="parent" label="Parent Root Key">
-              {primaryRk ? (
-                <KeyRef
-                  lead={<ProviderIcon kind={primaryRk.kind} size="S" />}
-                  name={primaryRk.metadata.name}
-                  detail={providerVisual(primaryRk.kind).label}
-                />
-              ) : primary ? (
-                <MissingRef name={primary.name} />
-              ) : (
-                'Not linked'
-              )}
-            </Fact>
-            {domainKeyScope(domainKey) === 'Instance' && (
-              <Fact area="child" label="Child Service Key">
-                {servedBy ? <KeyRef lead={<TierBadge tier="L3" />} name={servedBy} /> : 'None yet'}
-              </Fact>
-            )}
-          </div>
-        </>
-      )}
+      <ProblemStrip ready={conditionByType(domainKey.status?.conditions, 'Ready')} />
+      <div className="key-facts">
+        <Fact area="id" label="Key ID">
+          <CopyableId id={domainKey.status?.cryptoState?.id} />
+        </Fact>
+        <Fact area="parent" label="Parent Root Key">
+          {primaryRk ? (
+            <KeyRef
+              lead={<ProviderIcon kind={primaryRk.kind} size="S" />}
+              name={primaryRk.metadata.name}
+              detail={providerVisual(primaryRk.kind).label}
+            />
+          ) : primary ? (
+            <MissingRef name={primary.name} />
+          ) : (
+            'Not linked'
+          )}
+        </Fact>
+        {domainKeyScope(domainKey) === 'Instance' && (
+          <Fact area="child" label="Child Service Key">
+            {servedBy ? <KeyRef lead={<TierBadge tier="L3" />} name={servedBy} /> : 'None yet'}
+          </Fact>
+        )}
+      </div>
     </KeyCard>
   );
 };
 
 /* ----------------------------------- Sections ------------------------------ */
 
+const Collapse = ({
+  open,
+  offset = '0px',
+  children
+}: {
+  open: boolean;
+  offset?: string;
+  children: React.ReactNode;
+}) => {
+  const [rendered, setRendered] = useState(open);
+  const [hidden, setHidden] = useState(!open);
+  const [shown, setShown] = useState(open);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setRendered(true);
+      setHidden(false);
+      return undefined;
+    }
+    setShown(false);
+    const timer = window.setTimeout(() => setHidden(true), COLLAPSE_MS);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || hidden || shown) return;
+    ref.current?.getBoundingClientRect();
+    setShown(true);
+  }, [open, hidden, shown]);
+
+  if (!rendered) return null;
+  return (
+    <div
+      ref={ref}
+      hidden={hidden}
+      className={`collapse${shown ? ' collapse-open' : ''}`}
+      style={{ '--collapse-offset': offset } as React.CSSProperties}
+    >
+      <div className="collapse-clip">
+        <div className="collapse-body">{children}</div>
+      </div>
+    </div>
+  );
+};
+
 const SectionHeader = ({
   tier,
   title = `${TIER_LABEL[tier]}s`,
   count,
+  collapsed,
+  onToggle,
   rightContent
 }: {
   tier: Tier;
   title?: string;
   count: number;
+  collapsed: boolean;
+  onToggle: () => void;
   rightContent?: React.ReactNode;
 }) => (
   <div className="section-header">
     <div className="key-lead">
       <TierBadge tier={tier} />
     </div>
-    <div className="section-title">
+    <button
+      type="button"
+      className="section-title section-toggle"
+      aria-expanded={!collapsed}
+      aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
+      title={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
+      onClick={onToggle}
+    >
+      <Icon name="slim-arrow-down" />
       <Title level="H3" style={{ margin: 0 }}>
         {title}
       </Title>
       <span style={{ color: 'var(--sapContent_LabelColor)' }}>{keyCount(count)}</span>
-    </div>
-    {rightContent}
+    </button>
+    <div className="section-actions">{rightContent}</div>
   </div>
 );
 
@@ -1246,6 +1344,7 @@ const App = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [collapsedSections, setCollapsedSections] = useState<Record<SectionTier, boolean>>(readCollapsedSections);
   const [serviceKeyResourceVersion, setServiceKeyResourceVersion] = useState<string | null>(null);
   const [domainKeyResourceVersion, setDomainKeyResourceVersion] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
@@ -1264,7 +1363,6 @@ const App = () => {
   const [skBusy, setSkBusy] = useState(false);
   const [skName, setSkName] = useState('');
   const [skDomainKeyName, setSkDomainKeyName] = useState('');
-  const [skNamespace, setSkNamespace] = useState('');
 
   const [requestedResets, setRequestedResets] = useState<Record<string, string>>({});
   const [rkOpen, setRkOpen] = useState(false);
@@ -1296,7 +1394,6 @@ const App = () => {
   const [dkOpen, setDkOpen] = useState(false);
   const [dkBusy, setDkBusy] = useState(false);
   const [dkEditing, setDkEditing] = useState<DomainKey | null>(null);
-  const [dkNamespace, setDkNamespace] = useState('');
   const [dkScope, setDkScope] = useState<DomainKeyScope>('Namespace');
   const [dkName, setDkName] = useState('');
   const [dkPrimaryId, setDkPrimaryId] = useState<string>('');
@@ -1544,17 +1641,14 @@ const App = () => {
   /* --------------------------- Service key handlers ----------------------- */
 
   const openSkDialog = () => {
+    if (!resourceNamespace) return;
     setSkName('');
-    setSkNamespace(resourceNamespace ?? accountNamespace);
     setSkDomainKeyName(mintable[0] ? `${mintable[0].metadata.namespace}/${mintable[0].metadata.name}` : '');
     setSkOpen(true);
   };
 
   const skDomainKey = mintable.find((dk) => `${dk.metadata.namespace}/${dk.metadata.name}` === skDomainKeyName);
-  // Under a System Domain Key the namespace is chosen; otherwise it is the Domain Key's.
-  const skTargetNamespace = skDomainKey
-    ? domainKeyScope(skDomainKey) === 'System' ? skNamespace : skDomainKey.metadata.namespace ?? ''
-    : '';
+  const skTargetNamespace = resourceNamespace ?? '';
 
   const handleCreateServiceKey = async () => {
     if (!ctx.workspacePath) return;
@@ -1701,24 +1795,19 @@ const App = () => {
 
   /* ---------------------------- Domain key handlers ----------------------- */
 
-  const resetDkForm = (namespace: string) => {
-    const scope = namespaceDomainKey(domainKeysIn(namespace)) ? 'Instance' : 'Namespace';
-    setDkNamespace(namespace);
-    setDkScope(scope);
-    setDkName(scope === 'Namespace' ? namespace : '');
-  };
-
-  const chooseDkAccount = () => {
-    setDkNamespace(accountNamespace);
-    setDkScope('System');
-    setDkName('');
-  };
+  const dkNamespace = resourceNamespace ?? accountNamespace;
 
   const openDkDialog = () => {
     setDkEditing(null);
-    if (resourceNamespace) resetDkForm(resourceNamespace);
-    else chooseDkAccount();
-    setDkPrimaryId(activeRootKeys[0] ? rootKeyId(activeRootKeys[0]) : '');
+    if (resourceNamespace) {
+      const scope = namespaceDomainKey(domainKeysIn(resourceNamespace)) ? 'Instance' : 'Namespace';
+      setDkScope(scope);
+      setDkName(scope === 'Namespace' ? resourceNamespace : '');
+    } else {
+      setDkScope('System');
+      setDkName('');
+    }
+    setDkPrimaryId('');
     setDkOpen(true);
   };
 
@@ -1739,7 +1828,7 @@ const App = () => {
     setDkOpen(true);
   };
 
-  const dkValid = RFC_1123.test(dkName) && Boolean(dkEditing || RFC_1123.test(dkNamespace));
+  const dkValid = RFC_1123.test(dkName);
 
   const parseRootKeyId = (id: string): { kind: string; namespace: string; name: string } | null => {
     const parts = id.split('/');
@@ -1752,7 +1841,7 @@ const App = () => {
       setError('Cannot determine account name for tenantNameRef.');
       return;
     }
-    const rootKey = parseRootKeyId(dkPrimaryId) ?? undefined;
+    const rootKey = (dkEditing ? parseRootKeyId(dkPrimaryId) : null) ?? undefined;
     if (!dkValid) return;
     setDkBusy(true);
     try {
@@ -2056,8 +2145,21 @@ const App = () => {
   // Account level creates System keys only; namespace level creates Namespace and Instance ones.
   const dkScopeAllowed = (scope: DomainKeyScope) =>
     scope === 'System'
-      ? dkScope === 'System'
-      : dkScope !== 'System' && !(scope === 'Namespace' && dkNamespaceKey);
+      ? !resourceNamespace
+      : Boolean(resourceNamespace) && !(scope === 'Namespace' && dkNamespaceKey);
+
+  const allSectionsCollapsed = SECTION_TIERS.every((tier) => collapsedSections[tier]);
+  const applyCollapsedSections = (sections: Record<SectionTier, boolean>) => {
+    setCollapsedSections(sections);
+    writeCollapsedSections(sections);
+  };
+  const toggleSection = (tier: SectionTier) =>
+    applyCollapsedSections({ ...collapsedSections, [tier]: !collapsedSections[tier] });
+  const toggleAllSections = () =>
+    applyCollapsedSections({ L1: !allSectionsCollapsed, L2: !allSectionsCollapsed, L3: !allSectionsCollapsed });
+
+  const namespaceLabelFor = (namespace?: string) =>
+    !resourceNamespace && namespace && namespace !== accountNamespace ? namespace : undefined;
 
   const renderDomainKeyCard = (dk: DomainKey) => {
     const namespace = domainKeyNamespace(dk);
@@ -2066,6 +2168,7 @@ const App = () => {
         key={`${namespace}/${dk.metadata.name}`}
         domainKey={dk}
         namespace={namespace}
+        namespaceLabel={namespaceLabelFor(namespace)}
         servedBy={serviceKeyOn(dk, serviceKeys)?.metadata.name}
         rootKeys={rootKeys}
         accountNamespace={accountNamespace}
@@ -2114,7 +2217,11 @@ const App = () => {
         <FlexBox
           direction={FlexBoxDirection.Column}
           className="page page-width"
-          style={{ gap: '1.25rem' }}
+          style={{
+            gap: 'var(--page-gap)',
+            '--page-gap': '1.25rem',
+            '--collapse-ms': `${COLLAPSE_MS}ms`
+          } as React.CSSProperties}
           data-ui5-compact-size
         >
           <AccountHeader
@@ -2154,12 +2261,24 @@ const App = () => {
 
           {!loading && (
             <>
+              <div className="section-toolbar">
+                <Button
+                  design="Transparent"
+                  icon={allSectionsCollapsed ? 'expand-all' : 'collapse-all'}
+                  onClick={toggleAllSections}
+                >
+                  {allSectionsCollapsed ? 'Expand all' : 'Collapse all'}
+                </Button>
+              </div>
               <SectionHeader
                 tier="L1"
                 count={rootKeys.filter(configuredRoot).length}
+                collapsed={collapsedSections.L1}
+                onToggle={() => toggleSection('L1')}
                 rightContent={<span>{rootKeys.filter(configuredRoot).length} configured roots / {L1_SLOTS.length} slots</span>}
               />
-              <FlexBox direction={FlexBoxDirection.Column} style={{ gap: '0.75rem' }}>
+              <Collapse open={!collapsedSections.L1} offset="var(--page-gap)">
+                <FlexBox direction={FlexBoxDirection.Column} style={{ gap: '0.75rem' }}>
                   {L1_SLOTS.filter((slot) => !rootKeys.some((root) => managedSlot(root, accountNamespace)?.kind === slot.kind)).map((slot) => (
                     <MessageStrip key={slot.kind} design="Information" hideCloseButton>{slot.provider}: waiting for the operator to create slot {slot.name}.</MessageStrip>
                   ))}
@@ -2195,67 +2314,73 @@ const App = () => {
                     ) : <div key="configured" className="l1-root-cards">{cards}</div>;
                   })}
                 </FlexBox>
+              </Collapse>
 
-              <SectionHeader tier="L2" count={domainKeys.length} rightContent={createDkButton} />
-              {domainKeys.length === 0 ? (
-                <MessageStrip design="Information" hideCloseButton>
-                  No Domain Keys yet.
-                </MessageStrip>
-              ) : (
-                domainKeyNamespaces.map((namespace) => (
-                  <FlexBox key={namespace} direction={FlexBoxDirection.Column} style={{ gap: '0.75rem' }}>
-                    <span className="namespace-group">
-                      Namespace: {namespace}
-                      {resourceNamespace && namespace !== resourceNamespace ? ' (System keys, read-only)' : ''}
-                    </span>
-                    {orderedDomainKeys(domainKeysIn(namespace)).map(renderDomainKeyCard)}
+              <SectionHeader tier="L2" count={domainKeys.length} collapsed={collapsedSections.L2} onToggle={() => toggleSection('L2')} rightContent={createDkButton} />
+              <Collapse open={!collapsedSections.L2} offset="var(--page-gap)">
+                {domainKeys.length === 0 ? (
+                  <MessageStrip design="Information" hideCloseButton>
+                    No Domain Keys yet.
+                  </MessageStrip>
+                ) : (
+                  <FlexBox direction={FlexBoxDirection.Column} style={{ gap: '0.75rem' }}>
+                    {domainKeyNamespaces.flatMap((namespace) => orderedDomainKeys(domainKeysIn(namespace))).map(renderDomainKeyCard)}
                   </FlexBox>
-                ))
-              )}
+                )}
+              </Collapse>
 
               <SectionHeader
                 tier="L3"
                 count={serviceKeys.length}
+                collapsed={collapsedSections.L3}
+                onToggle={() => toggleSection('L3')}
                 rightContent={
-                  <Button design="Transparent" icon="sys-add" disabled={!canCreateSk} onClick={openSkDialog}>
-                    Mint Service Key
-                  </Button>
+                  resourceNamespace ? (
+                    <Button design="Transparent" icon="sys-add" disabled={!canCreateSk} onClick={openSkDialog}>
+                      Mint Service Key
+                    </Button>
+                  ) : (
+                    <span className="muted">Select a namespace to mint Service Keys.</span>
+                  )
                 }
               />
-              {serviceKeys.length === 0 ? (
-                <MessageStrip design={canCreateSk ? 'Information' : 'Critical'} hideCloseButton>
-                  {canCreateSk ? 'No Service Keys yet.' : 'Waiting for an Active Domain Key.'}
-                </MessageStrip>
-              ) : (
-                <FlexBox direction={FlexBoxDirection.Column} style={{ gap: '0.75rem' }}>
-                  {serviceKeys.map((sk) => (
-                    <ServiceKeyCard
-                      key={`${sk.metadata.namespace}/${sk.metadata.name}`}
-                      sk={sk}
-                      parent={domainKeys.find((dk) => dk.metadata.name === sk.spec.domainKeyRef && dk.metadata.namespace === parentNamespace(sk))}
-                      deks={dataEncryptionKeys.filter((dek) => dek.spec.serviceKeyRef === sk.metadata.name && dek.metadata.namespace === sk.metadata.namespace)}
-                      busyAction={busyActionFor('ServiceKey', sk.metadata.name, sk.metadata.namespace)}
-                      onDelete={() => setConfirmDelete({ kind: 'ServiceKey', name: sk.metadata.name, namespace: sk.metadata.namespace! })}
-                      onLifecycleToggle={() =>
-                        handleLifecycleToggle(
-                          { kind: 'ServiceKey', name: sk.metadata.name, namespace: sk.metadata.namespace! },
-                          keyLifecycle(sk)
-                        )
-                      }
-                      onAddDek={() => openDekDialog(sk)}
-                      onDeleteDek={(dek) => setConfirmDelete({ kind: 'DEK', name: dek.metadata.name, namespace: dek.metadata.namespace! })}
-                      onDekLifecycleToggle={(dek) =>
-                        handleLifecycleToggle(
-                          { kind: 'DEK', name: dek.metadata.name, namespace: dek.metadata.namespace! },
-                          keyLifecycle(dek)
-                        )
-                      }
-                      busyDekActionFor={(name) => busyActionFor('DEK', name)}
-                      canAddDek={keyLifecycle(sk) === 'Active'}
-                    />
-                  ))}
-                </FlexBox>
-              )}
+              <Collapse open={!collapsedSections.L3} offset="var(--page-gap)">
+                {serviceKeys.length === 0 ? (
+                  <MessageStrip design={canCreateSk ? 'Information' : 'Critical'} hideCloseButton>
+                    {canCreateSk ? 'No Service Keys yet.' : 'Waiting for an Active Domain Key.'}
+                  </MessageStrip>
+                ) : (
+                  <FlexBox direction={FlexBoxDirection.Column} style={{ gap: '0.75rem' }}>
+                    {serviceKeys.map((sk) => (
+                      <ServiceKeyCard
+                        key={`${sk.metadata.namespace}/${sk.metadata.name}`}
+                        sk={sk}
+                        namespaceLabel={namespaceLabelFor(sk.metadata.namespace)}
+                        parent={domainKeys.find((dk) => dk.metadata.name === sk.spec.domainKeyRef && dk.metadata.namespace === parentNamespace(sk))}
+                        deks={dataEncryptionKeys.filter((dek) => dek.spec.serviceKeyRef === sk.metadata.name && dek.metadata.namespace === sk.metadata.namespace)}
+                        busyAction={busyActionFor('ServiceKey', sk.metadata.name, sk.metadata.namespace)}
+                        onDelete={() => setConfirmDelete({ kind: 'ServiceKey', name: sk.metadata.name, namespace: sk.metadata.namespace! })}
+                        onLifecycleToggle={() =>
+                          handleLifecycleToggle(
+                            { kind: 'ServiceKey', name: sk.metadata.name, namespace: sk.metadata.namespace! },
+                            keyLifecycle(sk)
+                          )
+                        }
+                        onAddDek={() => openDekDialog(sk)}
+                        onDeleteDek={(dek) => setConfirmDelete({ kind: 'DEK', name: dek.metadata.name, namespace: dek.metadata.namespace! })}
+                        onDekLifecycleToggle={(dek) =>
+                          handleLifecycleToggle(
+                            { kind: 'DEK', name: dek.metadata.name, namespace: dek.metadata.namespace! },
+                            keyLifecycle(dek)
+                          )
+                        }
+                        busyDekActionFor={(name) => busyActionFor('DEK', name)}
+                        canAddDek={keyLifecycle(sk) === 'Active'}
+                      />
+                    ))}
+                  </FlexBox>
+                )}
+              </Collapse>
             </>
           )}
         </FlexBox>
@@ -2476,45 +2601,6 @@ const App = () => {
         }
       >
         <FlexBox direction={FlexBoxDirection.Column} style={{ gap: '1rem', width: DIALOG_WIDTH, padding: '0.5rem 0' }}>
-          {!dkEditing && (
-            <FlexBox direction={FlexBoxDirection.Column} style={{ gap: 2 }}>
-              <Label required>Where</Label>
-              <SegmentedButton
-                onSelectionChange={(e) => {
-                  const value = (e.detail.selectedItems[0] as HTMLElement | undefined)?.dataset.value;
-                  if (value === 'account') chooseDkAccount();
-                  if (value === 'namespace') resetDkForm(resourceNamespace ?? accountNamespace);
-                }}
-              >
-                <SegmentedButtonItem data-value="account" selected={dkScope === 'System'}>
-                  Account
-                </SegmentedButtonItem>
-                <SegmentedButtonItem data-value="namespace" selected={dkScope !== 'System'}>
-                  Namespace
-                </SegmentedButtonItem>
-              </SegmentedButton>
-            </FlexBox>
-          )}
-          {dkEditing || dkScope === 'System' ? (
-            <FlexBox direction={FlexBoxDirection.Column} style={{ gap: 2 }}>
-              <Label for="dk-namespace" required>Namespace</Label>
-              <Input id="dk-namespace" value={dkEditing ? domainKeyNamespace(dkEditing) : dkNamespace} readonly />
-              {!dkEditing && (
-                <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
-                  System keys are stored in the account namespace.
-                </span>
-              )}
-            </FlexBox>
-          ) : (
-            <FormField
-              id="dk-namespace"
-              label="Namespace"
-              required
-              value={dkNamespace}
-              onChange={(value) => resetDkForm(value.toLowerCase())}
-              hint="Use an existing namespace in this account."
-            />
-          )}
           <FlexBox direction={FlexBoxDirection.Column} style={{ gap: 2 }}>
             <Label required>Scope</Label>
             {dkEditing ? (
@@ -2546,6 +2632,11 @@ const App = () => {
                     Namespace is taken by {dkNamespaceKey.metadata.name}.
                   </span>
                 )}
+                <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
+                  {resourceNamespace
+                    ? 'System keys are created while all namespaces are shown.'
+                    : 'Select a namespace in the portal to create Namespace or Instance keys.'}
+                </span>
               </>
             )}
           </FlexBox>
@@ -2564,11 +2655,11 @@ const App = () => {
           </FlexBox>
           <FlexBox direction={FlexBoxDirection.Column} style={{ gap: 2 }}>
             <Label>Parent Root Key</Label>
-            <Select onChange={(e) => setDkPrimaryId(selectedValue(e))}>
+            <Select disabled={!dkEditing} onChange={(e) => setDkPrimaryId(selectedValue(e))}>
               <Option data-value="" icon="broken-link" selected={dkPrimaryId === ''}>
                 Not linked
               </Option>
-              {dkRootKeyOptions.map((rk) => {
+              {(dkEditing ? dkRootKeyOptions : []).map((rk) => {
                 const id = rootKeyId(rk);
                 return (
                   <Option
@@ -2583,6 +2674,11 @@ const App = () => {
                 );
               })}
             </Select>
+            {!dkEditing && (
+              <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
+                Link a root key later with Edit.
+              </span>
+            )}
           </FlexBox>
         </FlexBox>
       </Dialog>
@@ -2649,7 +2745,7 @@ const App = () => {
                     additionalText={scopeLabel(dk)}
                     selected={skDomainKeyName === `${dk.metadata.namespace}/${dk.metadata.name}`}
                   >
-                    {dk.metadata.namespace}/{dk.metadata.name}
+                    {dk.metadata.name}
                   </Option>
                 ))}
               </Select>
@@ -2660,24 +2756,6 @@ const App = () => {
               </span>
             )}
           </FlexBox>
-          {skDomainKey && domainKeyScope(skDomainKey) === 'System' && !resourceNamespace ? (
-            <FormField
-              id="sk-namespace"
-              label="Namespace"
-              required
-              value={skNamespace}
-              onChange={(v) => setSkNamespace(v.toLowerCase())}
-              hint="The Service Key is created in this namespace."
-            />
-          ) : (
-            <FlexBox direction={FlexBoxDirection.Column} style={{ gap: 2 }}>
-              <Label for="sk-namespace" required>Namespace</Label>
-              <Input id="sk-namespace" value={skTargetNamespace} readonly />
-              <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
-                {skDomainKey && domainKeyScope(skDomainKey) === 'System' ? 'The Service Key is created in this namespace.' : 'Same namespace as the Domain Key.'}
-              </span>
-            </FlexBox>
-          )}
         </FlexBox>
       </Dialog>
 

@@ -341,16 +341,109 @@ ui5-option[selected] {
   --sapFontHeader3Size: 1.125rem;
 }
 
-.section-header > ui5-button {
-  grid-area: action;
+.section-toggle {
+  appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  align-items: center;
+  border-radius: var(--sapElement_BorderCornerRadius);
 }
 
-.namespace-group {
-  margin-top: 0.25rem;
-  padding-left: calc(1rem + var(--key-lead) + 0.75rem);
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sapContent_LabelColor);
+.section-toggle ui5-icon {
+  flex: none;
+  color: var(--sapContent_IconColor);
+}
+
+.section-toggle:hover ui5-icon {
+  color: var(--sapContent_IconHoverColor);
+}
+
+.section-toggle ui5-icon {
+  transition: transform var(--collapse-ms) var(--collapse-ease);
+}
+
+.section-toggle[aria-expanded='false'] ui5-icon {
+  transform: rotate(-90deg);
+}
+
+.section-toggle:focus-visible {
+  outline: 2px solid var(--sapContent_FocusColor);
+  outline-offset: 2px;
+}
+
+.page {
+  --collapse-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: calc(-1 * var(--collapse-offset));
+  transition:
+    grid-template-rows var(--collapse-ms) var(--collapse-ease),
+    margin-top var(--collapse-ms) var(--collapse-ease);
+}
+
+.collapse[hidden] {
+  display: none;
+}
+
+.collapse-open {
+  grid-template-rows: 1fr;
+  margin-top: 0;
+}
+
+.collapse-clip {
+  min-height: 0;
+  margin: -0.25rem;
+  padding: 0.25rem;
+  overflow: hidden;
+}
+
+.collapse-body {
+  opacity: 0;
+  will-change: opacity;
+  transition: opacity var(--collapse-ms) var(--collapse-ease);
+}
+
+.collapse-open > .collapse-clip > .collapse-body {
+  opacity: 1;
+}
+
+.card-toggle::part(icon) {
+  transition: transform var(--collapse-ms) var(--collapse-ease);
+}
+
+.card-toggle[data-collapsed='true']::part(icon) {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapse,
+  .collapse-body,
+  .section-toggle ui5-icon,
+  .card-toggle::part(icon) {
+    transition: none;
+  }
+}
+
+.section-actions {
+  grid-area: action;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.section-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 1rem;
 }
 
 @container page (max-width: 64rem) {
@@ -410,12 +503,8 @@ ui5-option[selected] {
     row-gap: 0.5rem;
   }
 
-  .section-header > ui5-button {
+  .section-actions {
     justify-self: end;
-  }
-
-  .namespace-group {
-    padding-left: 1rem;
   }
 }
 
