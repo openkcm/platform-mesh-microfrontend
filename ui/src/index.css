@@ -341,16 +341,122 @@ ui5-option[selected] {
   --sapFontHeader3Size: 1.125rem;
 }
 
-.section-header > ui5-button {
-  grid-area: action;
+.section-toggle {
+  appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  align-items: center;
+  border-radius: var(--sapElement_BorderCornerRadius);
 }
 
-.namespace-group {
-  margin-top: 0.25rem;
-  padding-left: calc(1rem + var(--key-lead) + 0.75rem);
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sapContent_LabelColor);
+.section-toggle ui5-icon {
+  flex: none;
+  color: var(--sapContent_IconColor);
+}
+
+.section-toggle:hover ui5-icon {
+  color: var(--sapContent_IconHoverColor);
+}
+
+.section-toggle ui5-icon {
+  transition: transform var(--collapse-ms) var(--collapse-ease);
+}
+
+.section-toggle[aria-expanded='false'] ui5-icon {
+  transform: rotate(-90deg);
+}
+
+.section-toggle:focus-visible {
+  outline: 2px solid var(--sapContent_FocusColor);
+  outline-offset: 2px;
+}
+
+.page {
+  --collapse-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: calc(-1 * var(--collapse-offset));
+  transition:
+    grid-template-rows var(--collapse-ms) var(--collapse-ease),
+    margin-top var(--collapse-ms) var(--collapse-ease);
+}
+
+.collapse[hidden] {
+  display: none;
+}
+
+.collapse-open {
+  grid-template-rows: 1fr;
+  margin-top: 0;
+}
+
+.collapse-clip {
+  min-height: 0;
+  margin: -0.25rem;
+  padding: 0.25rem;
+  overflow: hidden;
+}
+
+.collapse-body {
+  opacity: 0;
+  will-change: opacity;
+  transition: opacity var(--collapse-ms) var(--collapse-ease);
+}
+
+.collapse-open > .collapse-clip > .collapse-body {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapse,
+  .collapse-body,
+  .section-toggle ui5-icon {
+    transition: none;
+  }
+}
+
+.section-actions {
+  grid-area: action;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.keys-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
+  padding: 0 1rem 1rem;
+  border: 1px solid var(--sapGroup_ContentBorderColor);
+  border-radius: var(--sapGroup_BorderCornerRadius);
+  background: var(--sapGroup_ContentBackground);
+}
+
+.keys-box-header {
+  display: flex;
+  align-items: center;
+  margin: 0 -1rem;
+  padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--sapGroup_ContentBorderColor);
+}
+
+.action-slot {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+}
+
+.action-slot-wide {
+  width: 6.5rem;
 }
 
 @container page (max-width: 64rem) {
@@ -410,37 +516,12 @@ ui5-option[selected] {
     row-gap: 0.5rem;
   }
 
-  .section-header > ui5-button {
+  .section-actions {
     justify-self: end;
   }
-
-  .namespace-group {
-    padding-left: 1rem;
-  }
 }
 
 
-.l1-root-cards { display: grid; gap: 0.75rem; }
-.l1-available {
-  border: 1px solid var(--sapGroup_ContentBorderColor);
-  border-radius: var(--sapElement_BorderCornerRadius, 0.5rem);
-  background: var(--sapGroup_ContentBackground);
-  box-shadow: 0 1px 2px rgba(34, 53, 72, 0.1);
-  overflow: hidden;
-}
-.l1-available h3 { margin: 0; padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--sapContent_LabelColor); }
-.l1-empty-slot {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-  padding: 0.375rem 1rem;
-  min-height: 2.375rem;
-  border-top: 1px solid var(--sapGroup_ContentBorderColor);
-}
-.l1-empty-provider { font-size: 0.875rem; font-weight: 700; min-width: 4.5rem; }
-.l1-empty-state { font-size: 0.8125rem; color: var(--sapContent_LabelColor); }
-.l1-empty-configure { margin-left: auto; }
 
 /* Tier chip: a tinted fill, a 1px edge, dark text of the same hue and a level glyph (the filled bar is the level). */
 .tier-badge {

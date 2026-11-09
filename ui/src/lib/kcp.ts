@@ -631,9 +631,8 @@ export const deleteRootKey = (
 const rootKeyItems = (spec: string, withIdentity = true) => `
           items {
             ${KEY_METADATA}
-            spec { ${spec} configured resetRequest }
+            spec { ${spec} configured }
             status {
-              slotState lastResetRequest
               conditions { type status reason message lastTransitionTime }
               cryptoState { id version lifecycleState lastRotatedAt }
               reconciliationStatus {
@@ -921,81 +920,6 @@ const sendSpecPatch = async (
     spec
   };
   await graphqlFetch(opts, { query, variables: { ns: namespace, name, object } });
-};
-
-export interface UpdateOpenBaoRootKeyInput {
-  namespace: string;
-  name: string;
-  serverAddress: string;
-  enginePath: string;
-  keyName: string;
-  certAuthMountPath: string;
-  certAuthRoleName: string;
-}
-
-export const updateOpenBaoRootKey = (opts: KcpClientOptions, input: UpdateOpenBaoRootKeyInput) =>
-  sendSpecPatch(opts, UPDATE_OPENBAO_MUTATION, input.namespace, input.name, {
-    configured: true,
-    serverAddress: input.serverAddress,
-    enginePath: input.enginePath,
-    keyName: input.keyName,
-    certAuth: {
-      authMountPath: input.certAuthMountPath,
-      roleName: input.certAuthRoleName
-    }
-  });
-
-export interface UpdateAWSRootKeyInput {
-  namespace: string;
-  name: string;
-  region: string;
-  keyUri: string;
-  trustAnchorArn: string;
-  profileArn: string;
-  roleArn: string;
-}
-
-export const updateAWSRootKey = (opts: KcpClientOptions, input: UpdateAWSRootKeyInput) =>
-  sendSpecPatch(opts, UPDATE_AWS_MUTATION, input.namespace, input.name, {
-    configured: true,
-    region: input.region,
-    keyUri: input.keyUri,
-    rolesAnywhere: {
-      trustAnchorArn: input.trustAnchorArn,
-      profileArn: input.profileArn,
-      roleArn: input.roleArn
-    }
-  });
-
-export interface UpdateAzureRootKeyInput {
-  namespace: string;
-  name: string;
-  vaultUrl: string;
-  keyName: string;
-  azureTenantId: string;
-  clientId: string;
-}
-
-export const updateAzureRootKey = (opts: KcpClientOptions, input: UpdateAzureRootKeyInput) =>
-  sendSpecPatch(opts, UPDATE_AZURE_MUTATION, input.namespace, input.name, {
-    configured: true,
-    vaultUrl: input.vaultUrl,
-    keyName: input.keyName,
-    federatedIdentity: {
-      tenantId: input.azureTenantId,
-      clientId: input.clientId
-    }
-  });
-
-// A reset keeps the operator-owned slot. Never use a delete mutation here.
-export const requestRootKeyReset = (
-  opts: KcpClientOptions, kind: RootKey['kind'], namespace: string, name: string, resetRequest: string
-): Promise<void> => {
-  if (fixturesEnabled()) return Promise.resolve();
-  return graphqlFetch<void>(opts, {
-    query: updateLifecycleMutation(kind, `update${kind}`),
-    variables: { ns: namespace, name, object: { spec: { resetRequest } } }
-  });
 };
 
 export interface DomainKeyRootInput {

@@ -301,6 +301,12 @@ export const fixtureRootKeys = (): RootKey[] => [
         lifecycleState: 'Active'
       }
     }
+  },
+  {
+    kind: 'AzureRootKey',
+    provider: 'Azure',
+    metadata: { name: 'azure', namespace: 'default' },
+    spec: { tenantNameRef: 'ig-9', configured: false }
   }
 ];
 

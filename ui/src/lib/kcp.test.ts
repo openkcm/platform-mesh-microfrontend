@@ -1,10 +1,6 @@
 import { Kind, parse, print, visit, type OperationDefinitionNode } from 'graphql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  requestRootKeyReset,
-  updateAWSRootKey,
-  updateAzureRootKey,
-  updateOpenBaoRootKey,
   listRootKeys,
   createAWSRootKey,
   createAzureRootKey,
@@ -433,28 +429,10 @@ describe('DomainKey root key link', () => {
 });
 
 
-it('requests a reset through a merge patch containing only resetRequest in spec', async () => {
-  await requestRootKeyReset(client,'AWSRootKey','default','aws','reset-uuid');
-  const request=lastRequest();
-  expect(request.query).toContain('updateAWSRootKey(');
-  expect(request.query).not.toContain('deleteAWSRootKey(');
-  expect(request.variables).toEqual({ns:'default',name:'aws',object:{spec:{resetRequest:'reset-uuid'}}});
-});
-
-it('configures existing slots with configured true and complete provider fields', async()=>{
-  await updateAWSRootKey(client,{namespace:'default',name:'aws',region:'eu',keyUri:'uri',trustAnchorArn:'trust',profileArn:'profile',roleArn:'role'});
-  expect((lastRequest().variables.object as any).spec).toEqual({configured:true,region:'eu',keyUri:'uri',rolesAnywhere:{trustAnchorArn:'trust',profileArn:'profile',roleArn:'role'}});
-  await updateAzureRootKey(client,{namespace:'default',name:'azure',vaultUrl:'vault',keyName:'key',azureTenantId:'tenant',clientId:'client'});
-  expect((lastRequest().variables.object as any).spec).toEqual({configured:true,vaultUrl:'vault',keyName:'key',federatedIdentity:{tenantId:'tenant',clientId:'client'}});
-  await updateOpenBaoRootKey(client,{namespace:'default',name:'openbao',serverAddress:'bao',enginePath:'transit',keyName:'key',certAuthMountPath:'cert',certAuthRoleName:'role'});
-  expect((lastRequest().variables.object as any).spec).toEqual({configured:true,serverAddress:'bao',enginePath:'transit',keyName:'key',certAuth:{authMountPath:'cert',roleName:'role'}});
-});
-
-it('requests slot status and configuration fields from every root type',async()=>{
+it('requests the configured flag and provider fields from every root type',async()=>{
   await listRootKeys(client,'default');
   const request=lastRequest();
-  expect(request.query.match(/configured resetRequest/g)).toHaveLength(6);
-  expect(request.query.match(/slotState lastResetRequest/g)).toHaveLength(6);
+  expect(request.query.match(/ configured }/g)).toHaveLength(6);
   expect(request.query).toContain('rolesAnywhere { trustAnchorArn profileArn roleArn }');
   expect(request.query).toContain('certAuth { authMountPath roleName }');
   expect(request.query).toContain('federatedIdentity { tenantId clientId }');
