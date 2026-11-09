@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0 (2026-11-09)
+
+## What's Changed
+* feat: follow the namespace selector, add collapsible sections by @ykld-work in https://github.com/openkcm/platform-mesh-microfrontend/pull/32
+
+
+**Full Changelog**: https://github.com/openkcm/platform-mesh-microfrontend/compare/v0.12.1...v0.13.0
+
 ## 0.12.1 (2026-11-04)
 
 ## What's Changed
