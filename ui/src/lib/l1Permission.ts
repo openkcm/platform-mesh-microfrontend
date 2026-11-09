@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { fixturesEnabled } from './fixtures';
 import type { RuntimeContext } from './luigi';
 
 export const L1_MARKER = {
@@ -22,6 +23,7 @@ export const allowsL1 = (value: unknown, action: MarkerAction = 'manage_l1'): bo
 };
 
 export const checkL1Permission = async (ctx: RuntimeContext, signal: AbortSignal, action: MarkerAction = 'manage_l1'): Promise<boolean> => {
+  if (fixturesEnabled()) return true;
   const path = ctx.workspacePath?.match(/^root:orgs:([^:]+):(.+)$/);
   if (!path || !ctx.token || !ctx.graphqlUrl || ctx.source !== 'luigi') return false;
   const response = await fetch(new URL('/rest/permissions/resource-check', ctx.graphqlUrl), {

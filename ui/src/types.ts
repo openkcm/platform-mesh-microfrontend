@@ -80,8 +80,13 @@ export interface RootKey {
   kind: 'AWSRootKey' | 'AzureRootKey' | 'OpenBaoRootKey' | 'GCPRootKey' | 'VaultRootKey' | 'HSMRootKey';
   provider: string;
   metadata: KeyMetadata;
-  spec: { tenantNameRef: string; configured?: boolean; resetRequest?: string; lifecycle?: string; [key: string]: unknown };
-  status?: { slotState?: 'Unconfigured' | 'Configuring' | 'Configured' | 'Resetting' | 'ResetFailed'; lastResetRequest?: string; conditions?: Condition[]; operationId?: string; reconciliationStatus?: ReconciliationStatus; cryptoState?: CryptoState };
+  spec: { tenantNameRef: string; configured?: boolean; lifecycle?: string; [key: string]: unknown };
+  status?: {
+    conditions?: Condition[];
+    operationId?: string;
+    reconciliationStatus?: ReconciliationStatus;
+    cryptoState?: CryptoState;
+  };
 }
 
 export interface DataEncryptionKey {

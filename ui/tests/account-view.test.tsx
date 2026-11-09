@@ -7,7 +7,7 @@ const api = vi.hoisted(() => ({
   initialContext: null as RuntimeContext | null,
   context: undefined as undefined | ((context: RuntimeContext) => void),
   rootEvent: undefined as undefined | (() => void),
-  configureRoot: vi.fn(), resetRoot: vi.fn(), lifecycleRoot: vi.fn(),
+  createRoot: vi.fn(), removeRoot: vi.fn(), lifecycleRoot: vi.fn(),
   services: vi.fn(), all: vi.fn(), list: vi.fn(), roots: vi.fn(), tenants: vi.fn(), remove: vi.fn(), createDomain: vi.fn(), createService: vi.fn(), createData: vi.fn(), navigate: vi.fn(), stop: vi.fn(), linkRoot: vi.fn(), unlinkRoot: vi.fn()
 }));
 vi.mock('../src/lib/luigi', async (original) => ({
@@ -25,7 +25,8 @@ vi.mock('../src/lib/kcp', async (original) => ({
   listServiceKeys: async () => ({items:[], resourceVersion:null}), listDataEncryptionKeys: async () => [],
   subscribeDomainKeys: () => api.stop, subscribeServiceKeys: () => api.stop,
   subscribeRootKeys: (_client:unknown,_namespace:unknown,onEvent:()=>void) => { api.rootEvent=onEvent; return api.stop; },
-  updateAWSRootKey: api.configureRoot, requestRootKeyReset: api.resetRoot, setRootKeyLifecycle: api.lifecycleRoot, subscribeDataEncryptionKeys: () => api.stop,
+  createAWSRootKey: api.createRoot, createAzureRootKey: api.createRoot, createOpenBaoRootKey: api.createRoot,
+  deleteRootKey: api.removeRoot, setRootKeyLifecycle: api.lifecycleRoot, subscribeDataEncryptionKeys: () => api.stop,
   deleteDomainKey: api.remove, linkDomainKeyRoot: api.linkRoot, unlinkDomainKeyRoot: api.unlinkRoot, createDomainKey: api.createDomain, createServiceKey: api.createService, createDataEncryptionKey: api.createData
 }));
 vi.mock('@ui5/webcomponents-base/dist/asset-registries/Icons.js', () => ({ registerIcon: () => {} }));
@@ -57,14 +58,15 @@ const key = (namespace: string, name = 'equal-name') => ({metadata:{name,namespa
 const snapshot = (items: any[]) => ({items,resourceVersion:null});
 const systemKey = (name = 'shared') => ({metadata:{name,namespace:'default'},spec:{tenantNameRef:'a',scope:'System',lifecycle:'Active'},status:{cryptoState:{lifecycleState:'Active'}}});
 const listByNamespace = (rows: Record<string, any[]>) => api.list.mockImplementation(async (_client: unknown, namespace: string) => snapshot(rows[namespace] ?? []));
-const activeRoot = {kind:'AWSRootKey',provider:'AWS',metadata:{name:'aws',namespace:'default'},spec:{tenantNameRef:'a',configured:true,lifecycle:'Active'},status:{slotState:'Configured',cryptoState:{lifecycleState:'Active'}}};
+const activeRoot = {kind:'AWSRootKey',provider:'AWS',metadata:{name:'aws',namespace:'default'},
+  spec:{tenantNameRef:'a',configured:true,lifecycle:'Active'},status:{cryptoState:{lifecycleState:'Active'}}};
 const change = (next: RuntimeContext) => act(() => api.context?.(next));
 const scopeSwitch = (dialog: HTMLElement) => within(within(dialog).getByRole('group'));
 const pressed = (button: HTMLElement) => button.getAttribute('aria-pressed') === 'true';
 beforeEach(() => {
   sessionStorage.clear();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ok:true,json:async()=>[{resource:'l1keyaccesses',name:'account-l1',actions:['manage_l1']}]}));
-  api.resetRoot.mockReset(); api.configureRoot.mockReset(); api.lifecycleRoot.mockReset();
+  api.createRoot.mockReset(); api.removeRoot.mockReset(); api.lifecycleRoot.mockReset();
   vi.clearAllMocks(); api.initialContext = null; api.all.mockResolvedValue(snapshot([])); api.list.mockResolvedValue(snapshot([]));
   api.services.mockResolvedValue(snapshot([])); api.roots.mockResolvedValue([]); api.tenants.mockResolvedValue([]); api.remove.mockResolvedValue(undefined); api.createDomain.mockResolvedValue(undefined); api.createService.mockResolvedValue(undefined); api.createData.mockResolvedValue(undefined); api.navigate.mockResolvedValue(undefined);
 });
@@ -246,6 +248,19 @@ it('collapses and expands every section with one button', async () => {
   expect(['aws', 'domain-key', 'service-key'].every(visible)).toBe(true);
 });
 
+it('puts Collapse all in the header of a box that holds every key section', async () => {
+  await renderAllTiers();
+  const button = screen.getByText('Collapse all');
+  expect(button.closest('.app-header')).toBeNull();
+  const box = button.closest('.keys-box')!;
+  expect(box).not.toBeNull();
+  const header = box.querySelector('.keys-box-header')!;
+  expect(header.contains(button)).toBe(true);
+  const sections = box.querySelectorAll('.section-header');
+  expect(sections).toHaveLength(3);
+  expect(header.compareDocumentPosition(sections[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 it('offers Expand all once every section was collapsed one by one', async () => {
   await renderAllTiers();
   for (const title of ['Root Keys', 'Domain Keys', 'Service Keys']) fireEvent.click(screen.getByLabelText('Collapse ' + title));
@@ -284,16 +299,12 @@ it('builds a section that starts collapsed only when it is first opened', async 
   expect(visible('domain-key')).toBe(true);
 });
 
-it('collapses and expands a Domain Key card body with the same animation', async () => {
+it('has no fold on a Domain Key card and always shows its body', async () => {
   await renderAllTiers();
-  const fact = () => screen.getByText('Parent Root Key');
-  fireEvent.click(screen.getByLabelText('Collapse'));
-  expect(fact().closest('[hidden]')).toBeNull();
-  await waitFor(() => expect(fact().closest('[hidden]')).not.toBeNull());
-  expect(visible('domain-key')).toBe(true);
-  fireEvent.click(screen.getByLabelText('Expand'));
-  await waitFor(() => expect(fact().closest('.collapse')!.classList.contains('collapse-open')).toBe(true));
-  expect(fact().closest('[hidden]')).toBeNull();
+  expect(screen.queryByLabelText('Collapse')).toBeNull();
+  expect(screen.queryByLabelText('Expand')).toBeNull();
+  expect(document.querySelector('.card-toggle')).toBeNull();
+  expect(screen.getByText('Parent Root Key').closest('[hidden]')).toBeNull();
 });
 
 it('opens a collapsed section with an animation step', async () => {
@@ -476,8 +487,8 @@ it('explains why Parent Root Key is disabled when creating a Domain Key, and not
 });
 
 it.each([
-  [null,'Select a namespace in the portal to create Namespace or Instance keys.'],
-  ['team-a','System keys are created while all namespaces are shown.']
+  [null,'To create a Namespace or Instance key, select a namespace.'],
+  ['team-a','To create a System key, select all namespaces.']
 ])('explains the available Domain Key scopes at the %s level', async (namespace, hint) => {
   render(<App/>); change(context('a',namespace));
   await waitFor(()=>expect(namespace ? api.list : api.all).toHaveBeenCalled());
@@ -513,7 +524,19 @@ it('keeps root operations in the account namespace when the portal filters lower
 });
 
 
-const rootFixture = {kind:'AWSRootKey',provider:'AWS',metadata:{name:'aws',namespace:'default'},spec:{tenantNameRef:'a',configured:false,lifecycle:'Active'},status:{slotState:'Unconfigured',cryptoState:{lifecycleState:'Active'}}};
+const rootFixture = {kind:'AWSRootKey',provider:'AWS',metadata:{name:'aws-eu',namespace:'default'},
+  spec:{tenantNameRef:'a',lifecycle:'Active'},status:{cryptoState:{id:'aws-eu-id',lifecycleState:'Active'}}};
+const emptySlot = {kind:'AzureRootKey',provider:'Azure',metadata:{name:'azure',namespace:'default'},
+  spec:{tenantNameRef:'a',configured:false}};
+const rootCard = (name: string) => screen.findByText(name,{selector:'.key-name'});
+const addRootKey = () => screen.findByText('Add Root Key',{selector:'button'});
+const fillRootKeyDialog = (name: string) => {
+  const [nameField, ...fields] = within(screen.getByRole('dialog')).getAllByRole('textbox');
+  fireEvent.change(nameField,{target:{value:name}});
+  for (const field of fields) fireEvent.change(field,{target:{value:'config-value'}});
+};
+const dialogButton = (label: string) =>
+  within(screen.getByRole('dialog')).getByText(label,{selector:'button'}) as HTMLButtonElement;
 
 it.each(['deny','pending','failure','malformed'])('hides L1 actions for %s and preserves lower-tier actions', async (mode) => {
   api.roots.mockResolvedValue([rootFixture]);
@@ -523,41 +546,39 @@ it.each(['deny','pending','failure','malformed'])('hides L1 actions for %s and p
     return {ok:true,json:async()=>mode==='malformed'?[{resource:'l1keyaccesses',actions:['manage_l1']}]:[]} as Response;
   });
   render(<App/>); change(context('a'));
-  await screen.findByText('AWS',{selector:'.l1-empty-provider'});
-  expect(screen.queryByText('Register Root Key')).toBeNull();
-  expect(screen.queryByLabelText('Configure Root Key')).toBeNull();
+  await rootCard('aws-eu');
+  expect(screen.queryByText('Add Root Key')).toBeNull();
   expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
+  expect(screen.queryByText('Deactivate',{selector:'button'})).toBeNull();
   expect(screen.getAllByText('Create Domain Key').every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
 });
 
 it('shows L1 actions after allow and closes the dialog when permissions change', async () => {
   api.roots.mockResolvedValue([rootFixture]);
   render(<App/>); change(context('a'));
-  fireEvent.click(await screen.findByLabelText('Configure Root Key'));
+  fireEvent.click(await addRootKey());
   expect(screen.getByRole('dialog')).toBeTruthy();
-  expect(screen.getByLabelText('Configure Root Key')).toBeTruthy();
-  expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
   vi.mocked(fetch).mockResolvedValue({ok:true,json:async()=>[]} as Response);
   change(context('a'));
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(screen.queryByLabelText('Configure Root Key')).toBeNull();
+  expect(screen.queryByText('Add Root Key')).toBeNull();
   await act(async()=>{});
-  expect(screen.queryByLabelText('Configure Root Key')).toBeNull();
+  expect(screen.queryByText('Add Root Key')).toBeNull();
 });
 
 it('keeps the first L1 action click after focus while the permission check is pending', async () => {
   api.roots.mockResolvedValue([rootFixture]);
   render(<App />); change(context('a'));
-  const configure = await screen.findByLabelText('Configure Root Key');
+  const add = await addRootKey();
   vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
   fireEvent(window, new Event('focus'));
-  expect(screen.getByLabelText('Configure Root Key')).toBe(configure);
-  fireEvent.click(configure);
+  expect(screen.getByText('Add Root Key',{selector:'button'})).toBe(add);
+  fireEvent.click(add);
   expect(screen.getByRole('dialog')).toBeTruthy();
 });
 
-it('hides L1 writes and closes a reset dialog when focus detects a revoked role', async () => {
-  api.roots.mockResolvedValue([{...rootFixture,spec:{configured:true},status:{slotState:'Configured',cryptoState:{lifecycleState:'Active'}}}]);
+it('hides L1 writes and closes a delete dialog when focus detects a revoked role', async () => {
+  api.roots.mockResolvedValue([rootFixture]);
   render(<App/>); change(context('a'));
   fireEvent.click(await screen.findByLabelText('Delete Root Key'));
   expect(screen.getByRole('dialog')).toBeTruthy();
@@ -568,7 +589,7 @@ it('hides L1 writes and closes a reset dialog when focus detects a revoked role'
   expect(screen.getByLabelText('Delete Root Key')).toBeTruthy();
   await act(async () => pending.forEach(resolve => resolve({ok:true,json:async()=>[]} as Response)));
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(screen.queryByLabelText('Configure Root Key')).toBeNull();
+  expect(screen.queryByText('Add Root Key')).toBeNull();
   expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
   expect(screen.queryByText('Deactivate',{selector:'button'})).toBeNull();
   expect(screen.getAllByText('Create Domain Key').every(button => !(button as HTMLButtonElement).disabled)).toBe(true);
@@ -576,8 +597,8 @@ it('hides L1 writes and closes a reset dialog when focus detects a revoked role'
 
 it.each(['http', 'graphql'])('hides L1 writes after a real %s role denial without a context change', async (failure) => {
   const actual = await vi.importActual<typeof import('../src/lib/kcp')>('../src/lib/kcp');
-  api.resetRoot.mockImplementation(actual.requestRootKeyReset);
-  api.roots.mockResolvedValue([{...rootFixture,spec:{configured:true},status:{slotState:'Configured',cryptoState:{lifecycleState:'Active'}}}]);
+  api.removeRoot.mockImplementation(actual.deleteRootKey);
+  api.roots.mockResolvedValue([rootFixture]);
   render(<App/>); change(context('a'));
   fireEvent.click(await screen.findByLabelText('Delete Root Key'));
   vi.mocked(fetch).mockImplementation(async (_url, init) => {
@@ -585,9 +606,9 @@ it.each(['http', 'graphql'])('hides L1 writes after a real %s role denial withou
     if (body.checks) return new Promise(() => {});
     return {ok:failure !== 'http',status:403,statusText:'Forbidden',json:async()=>({errors:[{message:'The L1 Key Manager role is required.'}]})} as Response;
   });
-  fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete',{selector:'button'}));
+  fireEvent.click(dialogButton('Delete'));
   await screen.findByText(/Delete failed:/);
-  expect(screen.queryByLabelText('Configure Root Key')).toBeNull();
+  expect(screen.queryByText('Add Root Key')).toBeNull();
   expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(vi.mocked(fetch).mock.calls.some(([,init]) => String(init?.body).includes('"checks"'))).toBe(true);
@@ -596,172 +617,122 @@ it.each(['http', 'graphql'])('hides L1 writes after a real %s role denial withou
 it('rechecks manage_l1 when the user returns from L1 Key Managers', async () => {
   api.roots.mockResolvedValue([rootFixture]);
   render(<App/>); change({...context('a'),openkcmPage:'keys'});
-  await screen.findByLabelText('Configure Root Key');
+  await addRootKey();
   change({...context('a'),openkcmPage:'l1-key-managers'});
   await screen.findByText('Read-only. Only account owners can manage L1 Key Managers.');
   vi.mocked(fetch).mockResolvedValue({ok:true,json:async()=>[]} as Response);
   change({...context('a'),openkcmPage:'keys'});
-  await screen.findByText('AWS',{selector:'.l1-empty-provider'});
-  expect(screen.queryByLabelText('Configure Root Key')).toBeNull();
+  await rootCard('aws-eu');
+  expect(screen.queryByText('Add Root Key')).toBeNull();
   expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
 });
 
-
-it.each(['Unconfigured','Configuring','Configured','Resetting','ResetFailed'])('shows %s with matching L1 actions', async state=>{
-  api.roots.mockResolvedValue([{...rootFixture,spec:{...rootFixture.spec,configured:state!=='Unconfigured'},status:{slotState:state,cryptoState:{lifecycleState:'Active'}}}]);
-  render(<App/>);change(context('a'));
-  await screen.findByText(state === 'Unconfigured' ? 'Not configured' : `Slot state: ${state}`);
-  const configure=await screen.findByLabelText('Configure Root Key') as HTMLButtonElement;
-  expect(configure.disabled).toBe(state!=='Unconfigured');
-  if (state === 'Unconfigured') expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
-  else expect((screen.getByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(!['Configured','Configuring','ResetFailed'].includes(state));
-  expect(screen.queryByText('Deactivate',{selector:'button'})!==null).toBe(state==='Configured');
-  if(state==='ResetFailed') expect(screen.getByText(/ResetFailed. Use Delete to retry the reset./)).toBeTruthy();
+it('adds a second root key of the same provider under a chosen name', async () => {
+  api.roots.mockResolvedValue([rootFixture]); api.createRoot.mockResolvedValue(undefined);
+  render(<App/>); change(context('a'));
+  fireEvent.click(await addRootKey());
+  expect(pressed(within(screen.getByRole('dialog')).getByText('AWS'))).toBe(true);
+  fillRootKeyDialog('aws-us');
+  fireEvent.click(dialogButton('Add'));
+  await waitFor(() => expect(api.createRoot).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    namespace:'default', name:'aws-us', tenantNameRef:'a', region:'config-value', roleArn:'config-value'
+  })));
+  await screen.findByText('Root Key "aws-us" added.');
+  expect(screen.queryByRole('dialog')).toBeNull();
 });
 
-it('shows all six slots and marks stubs as not implemented',async()=>{
-  const slots=[['AWSRootKey','aws'],['AzureRootKey','azure'],['GCPRootKey','gcp'],['HSMRootKey','hsm'],['VaultRootKey','vault'],['OpenBaoRootKey','openbao']];
-  api.roots.mockResolvedValue(slots.map(([kind,name])=>({...rootFixture,kind,metadata:{name,namespace:'default'}})));
-  render(<App/>);change(context('a'));
-  await screen.findByText('0 configured roots / 6 slots');
-  const buttons=await screen.findAllByLabelText('Configure Root Key');
-  expect(buttons).toHaveLength(6);
-  expect(buttons.filter(button=>(button as HTMLButtonElement).disabled)).toHaveLength(3);
-  expect(screen.getAllByText('Not implemented')).toHaveLength(3);
-  expect(screen.queryByText('Register Root Key')).toBeNull();
+it('creates the provider picked in the dialog', async () => {
+  api.createRoot.mockResolvedValue(undefined);
+  render(<App/>); change(context('a'));
+  fireEvent.click(await addRootKey());
+  fireEvent.click(within(screen.getByRole('dialog')).getByText('Azure'));
+  fillRootKeyDialog('azure-eu');
+  fireEvent.click(dialogButton('Add'));
+  await waitFor(() => expect(api.createRoot).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    name:'azure-eu', vaultUrl:'config-value', azureTenantId:'config-value', clientId:'config-value'
+  })));
 });
 
-it('keeps arbitrary-name legacy roots read-only even for a role holder',async()=>{
-  api.roots.mockResolvedValue([{...rootFixture,metadata:{name:'legacy-root',namespace:'default'},spec:{configured:true},status:{slotState:'Configured'}}]);
-  render(<App/>);change(context('a'));
-  await screen.findByText('Legacy (read-only)',{exact:false});
-  await act(async()=>{});
-  expect(screen.queryByLabelText('Configure Root Key')).toBeNull();
-  expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
+it('rejects a name the same provider already uses', async () => {
+  api.roots.mockResolvedValue([rootFixture]);
+  render(<App/>); change(context('a'));
+  fireEvent.click(await addRootKey());
+  fillRootKeyDialog('aws-eu');
+  expect(screen.getByText('This name is taken.')).toBeTruthy();
+  expect(dialogButton('Add').disabled).toBe(true);
+  fireEvent.click(within(screen.getByRole('dialog')).getByText('OpenBao'));
+  expect(screen.queryByText('This name is taken.')).toBeNull();
+  expect(api.createRoot).not.toHaveBeenCalled();
 });
 
-it('configures a fixed AWS slot without a create operation',async()=>{
-  api.configureRoot.mockResolvedValue(undefined);api.roots.mockResolvedValue([rootFixture]);
-  render(<App/>);change(context('a'));
-  fireEvent.click(await screen.findByLabelText('Configure Root Key'));
-  const dialog=screen.getByRole('dialog');
-  const fields=within(dialog).getAllByRole('textbox');
-  expect((fields[1] as HTMLInputElement).readOnly).toBe(true);
-  for(const field of fields.slice(2)) fireEvent.change(field,{target:{value:'config-value'}});
-  fireEvent.click(within(dialog).getByText('Configure',{selector:'button'}));
-  await waitFor(()=>expect(api.configureRoot).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({name:'aws',namespace:'default',region:'config-value',keyUri:'config-value'})));
+it('keeps Add disabled until every field is filled', async () => {
+  render(<App/>); change(context('a'));
+  fireEvent.click(await addRootKey());
+  fireEvent.change(within(screen.getByRole('dialog')).getAllByRole('textbox')[0],{target:{value:'aws-us'}});
+  expect(dialogButton('Add').disabled).toBe(true);
 });
 
-it('requests Delete as a UUID reset, permits dependencies, and waits for the exact completion',async()=>{
-  api.resetRoot.mockResolvedValue(undefined);
-  const configured={...rootFixture,spec:{...rootFixture.spec,configured:true},status:{slotState:'Configured',cryptoState:{lifecycleState:'Active'}}};
-  api.roots.mockResolvedValue([configured]);
-  api.resetRoot.mockImplementation(async (_client,_kind,_namespace,_name,nonce) => {
-    api.roots.mockResolvedValue([{...configured,spec:{...configured.spec,resetRequest:nonce}}]);
-  });
-  api.all.mockResolvedValue(snapshot([{...key('team-a','child'),spec:{tenantNameRef:'a',primaryRootKeyRef:{kind:'AWSRootKey',name:'aws',namespace:'default'}}}]));
-  render(<App/>);change({...context('a'),viewLevel:'account'});
+it('deletes a root key that no Domain Key uses', async () => {
+  api.roots.mockResolvedValue([rootFixture]); api.removeRoot.mockResolvedValue(undefined);
+  render(<App/>); change({...context('a'),viewLevel:'account'});
   fireEvent.click(await screen.findByLabelText('Delete Root Key'));
-  expect(screen.getByText(/The operator deactivates dependent keys/)).toBeTruthy();
-  fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete',{selector:'button'}));
-  await waitFor(()=>expect(api.resetRoot).toHaveBeenCalled());
-  const [client,kind,namespace,name,nonce]=api.resetRoot.mock.calls[0];
-  expect(client.workspacePath).toBe('root:orgs:showroom:a');
-  expect([kind,namespace,name]).toEqual(['AWSRootKey','default','aws']);
-  expect(nonce).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-  await screen.findByText(/Delete in progress/);
-  api.roots.mockResolvedValue([{...rootFixture,spec:{...rootFixture.spec,resetRequest:nonce},status:{slotState:'Unconfigured',lastResetRequest:'old'}}]);
-  act(()=>api.rootEvent?.());
-  await screen.findByText('Slot state: Unconfigured');
-  expect(screen.getByText(/Delete in progress/)).toBeTruthy();
-  api.roots.mockResolvedValue([{...rootFixture,status:{slotState:'Unconfigured',lastResetRequest:nonce}}]);
-  act(()=>api.rootEvent?.());
-  await waitFor(()=>expect(screen.queryByText(/Delete in progress/)).toBeNull());
-  expect((screen.getByLabelText('Configure Root Key') as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(dialogButton('Delete'));
+  await waitFor(() => expect(api.removeRoot).toHaveBeenCalledWith(
+    expect.objectContaining({workspacePath:'root:orgs:showroom:a'}), 'AWSRootKey', 'default', 'aws-eu'));
+  await screen.findByText('Root Key "aws-eu" is being deleted.');
 });
 
+it('blocks deleting a root key that a Domain Key uses', async () => {
+  api.roots.mockResolvedValue([rootFixture]);
+  api.all.mockResolvedValue(snapshot([{...key('team-a','child'),
+    spec:{tenantNameRef:'a',primaryRootKeyRef:{kind:'AWSRootKey',name:'aws-eu',namespace:'default'}}}]));
+  render(<App/>); change({...context('a'),viewLevel:'account'});
+  fireEvent.click(await screen.findByLabelText('Delete Root Key'));
+  expect(screen.getByText('aws-eu is linked to 1 Domain Key. Unlink or delete it first.')).toBeTruthy();
+  expect(dialogButton('Delete').disabled).toBe(true);
+  expect(api.removeRoot).not.toHaveBeenCalled();
+});
 
-it('offers only configured Active roots as L2 parents when editing',async()=>{
+it('keeps a root key that failed to register deletable but not toggleable', async () => {
+  api.roots.mockResolvedValue([{...rootFixture,status:{conditions:[
+    {type:'Ready',status:'False',reason:'RootKeyCreateFailed',message:'Backend registration rejected'}
+  ]}}]);
+  render(<App/>); change(context('a'));
+  await screen.findByText(/Backend registration rejected/);
+  expect((screen.getByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByText('Deactivate',{selector:'button'})).toBeNull();
+});
+
+it('hides empty legacy slots', async () => {
+  api.roots.mockResolvedValue([rootFixture, emptySlot]);
+  const {container} = render(<App/>); change(context('a'));
+  await rootCard('aws-eu');
+  expect(screen.queryByText('azure',{selector:'.key-name'})).toBeNull();
+  expect(container.querySelectorAll('.key-card-header')).toHaveLength(1);
+});
+
+it('shows an empty L1 section when only empty slots exist', async () => {
+  api.roots.mockResolvedValue([emptySlot]);
+  render(<App/>); change(context('a'));
+  await screen.findByText('No Root Keys yet.');
+  expect(await addRootKey()).toBeTruthy();
+});
+
+it('offers only Active roots as L2 parents when editing',async()=>{
   api.roots.mockResolvedValue([
-    rootFixture,
-    {...rootFixture,kind:'AzureRootKey',metadata:{name:'azure',namespace:'default'},spec:{configured:true},status:{slotState:'Configured',cryptoState:{lifecycleState:'Active'}}},
-    {...rootFixture,kind:'OpenBaoRootKey',metadata:{name:'openbao',namespace:'default'},spec:{configured:true},status:{slotState:'Configured',cryptoState:{lifecycleState:'Deactivated'}}}
+    emptySlot,
+    {...rootFixture,kind:'AzureRootKey',metadata:{name:'azure-eu',namespace:'default'}},
+    {...rootFixture,kind:'OpenBaoRootKey',metadata:{name:'openbao',namespace:'default'},
+  status:{cryptoState:{lifecycleState:'Deactivated'}}}
   ]);
   api.all.mockResolvedValue(snapshot([key('team-a','dk')]));
   render(<App/>);change(context('a'));
-  await screen.findByText('azure',{selector:'.key-name'});
+  await rootCard('azure-eu');
   fireEvent.click(screen.getByLabelText('Edit Domain Key'));
   const options=within(screen.getByRole('dialog')).getAllByRole('option').map(option=>option.textContent);
-  expect(options).toContain('azure');
-  expect(options).not.toContain('aws');
+  expect(options).toContain('azure-eu');
+  expect(options).not.toContain('azure');
   expect(options).not.toContain('openbao');
-});
-
-
-it('keeps Configure disabled between reset acknowledgement and request cleanup',async()=>{
-  api.roots.mockResolvedValue([{...rootFixture,spec:{...rootFixture.spec,resetRequest:'completed'},status:{slotState:'Unconfigured',lastResetRequest:'completed'}}]);
-  render(<App/>);change(context('a'));
-  expect((await screen.findByLabelText('Configure Root Key') as HTMLButtonElement).disabled).toBe(true);
-  api.roots.mockResolvedValue([rootFixture]);act(()=>api.rootEvent?.());
-  await waitFor(()=>expect((screen.getByLabelText('Configure Root Key') as HTMLButtonElement).disabled).toBe(false));
-});
-
-it('unlocks Delete after a rejected reset and a fresh unchanged snapshot',async()=>{
-  api.resetRoot.mockRejectedValueOnce(new Error('503 Service Unavailable'));
-  const configured={...rootFixture,spec:{...rootFixture.spec,configured:true},status:{slotState:'Configured',cryptoState:{lifecycleState:'Active'}}};
-  api.roots.mockResolvedValue([configured]);
-  render(<App/>);change(context('a'));
-  fireEvent.click(await screen.findByLabelText('Delete Root Key'));
-  fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete',{selector:'button'}));
-  await screen.findByText(/Delete failed: 503/);
-  expect((screen.getByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.queryByText(/Delete in progress/)).toBeNull();
-  act(()=>api.rootEvent?.());
-  await waitFor(()=>expect(api.roots.mock.calls.length).toBeGreaterThan(1));
-  await waitFor(()=>expect((screen.getByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(false));
-  expect(screen.queryByText(/Delete in progress/)).toBeNull();
-});
-
-it('permits Delete when initial registration is stuck in Configuring',async()=>{
-  api.roots.mockResolvedValue([{...rootFixture,spec:{...rootFixture.spec,configured:true},status:{slotState:'Configuring',conditions:[{type:'Ready',status:'False',reason:'RootKeyCreateFailed',message:'Backend registration rejected'}]}}]);
-  render(<App/>);change(context('a'));
-  await screen.findByText('Slot state: Configuring');
-  expect((await screen.findByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(false);
-  expect((screen.getByLabelText('Configure Root Key') as HTMLButtonElement).disabled).toBe(true);
-});
-
-
-it('unlocks an accepted optimistic reset when a fresh snapshot has no pending request',async()=>{
-  const configured={...rootFixture,spec:{...rootFixture.spec,configured:true},status:{slotState:'Configured',cryptoState:{lifecycleState:'Active'}}};
-  api.roots.mockResolvedValue([configured]);api.resetRoot.mockResolvedValue(undefined);
-  render(<App/>);change(context('a'));
-  fireEvent.click(await screen.findByLabelText('Delete Root Key'));
-  fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete',{selector:'button'}));
-  await waitFor(()=>expect(api.resetRoot).toHaveBeenCalledOnce());
-  await waitFor(()=>expect(api.roots.mock.calls.length).toBeGreaterThan(1));
-  await waitFor(()=>expect((screen.getByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(false));
-  expect(screen.queryByText(/Delete in progress/)).toBeNull();
-});
-
-
-it('retries an empty ResetFailed request but never replaces a persisted nonce',async()=>{
-  const failed={...rootFixture,spec:{...rootFixture.spec,configured:true},status:{slotState:'ResetFailed',conditions:[{type:'Ready',status:'False',reason:'CleanupFailed',message:'Backend cleanup unavailable'}]}};
-  api.roots.mockResolvedValue([failed]);
-  api.resetRoot.mockImplementation(async(_client,_kind,_ns,_name,nonce)=>{
-    api.roots.mockResolvedValue([{...failed,spec:{...failed.spec,resetRequest:nonce}}]);
-  });
-  render(<App/>);change(context('a'));
-  const button=await screen.findByLabelText('Delete Root Key') as HTMLButtonElement;
-  expect(button.disabled).toBe(false);
-  fireEvent.click(button);
-  fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete',{selector:'button'}));
-  await screen.findByText(/Retrying automatically.*Backend cleanup unavailable/);
-  expect((screen.getByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(true);
-  expect(api.resetRoot).toHaveBeenCalledOnce();
-  act(()=>api.rootEvent?.());
-  await waitFor(()=>expect(api.roots.mock.calls.length).toBeGreaterThan(2));
-  expect((screen.getByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(true);
-  expect(api.resetRoot).toHaveBeenCalledOnce();
 });
 
 
@@ -780,14 +751,14 @@ it('keeps the IAM shortcut off Keys for a marker administrator without granting 
   render(<App/>);change(context('a'));
   await waitFor(()=>expect(api.roots).toHaveBeenCalled());
   expect(screen.queryByText('L1 Key Managers')).toBeNull();
-  expect(screen.queryByLabelText('Configure Root Key')).toBeNull();
+  expect(screen.queryByText('Add Root Key')).toBeNull();
 });
 
 it('does not show IAM management to an L1 manager without manage_iam_roles',async()=>{
   api.roots.mockResolvedValue([rootFixture]);
   allowMarkerActions(['manage_l1']);
   render(<App/>);change(context('a'));
-  await screen.findByLabelText('Configure Root Key');
+  await addRootKey();
   expect(screen.queryByText('L1 Key Managers')).toBeNull();
 });
 
@@ -855,31 +826,27 @@ it.each(['deny', 'pending', 'failure', 'namespaced'])('denies the Members page f
 });
 
 
-it.each([0, 2, 6])('shows %i configured cards and compact rows for the remaining slots', async (count) => {
-  const { L1_SLOTS } = await import('../src/lib/l1Slots');
-  api.roots.mockResolvedValue(L1_SLOTS.map((slot, index) => ({
-    ...rootFixture, kind: slot.kind, metadata: {name: slot.name, namespace: 'default'},
-    spec: {...rootFixture.spec, configured: index < count},
-    status: {slotState: index < count ? 'Configured' : 'Unconfigured', cryptoState: {lifecycleState: 'Active'},
-      conditions: index < count ? [] : [{type:'Ready',status:'False',reason:'Unconfigured',message:'The slot has no provider configuration.'}]}
-  })));
+it('shows one card per root key, with several keys per provider', async () => {
+  api.roots.mockResolvedValue([
+    {...rootFixture,kind:'OpenBaoRootKey',metadata:{name:'openbao-b',namespace:'default'}},
+    rootFixture,
+    {...rootFixture,kind:'OpenBaoRootKey',metadata:{name:'openbao-a',namespace:'default'}}
+  ]);
   const {container} = render(<App/>); change(context('a'));
-  await screen.findByText(`${count} configured roots / 6 slots`);
-  expect(container.querySelectorAll('.l1-empty-slot')).toHaveLength(6 - count);
-  expect(container.querySelectorAll('.key-card-header')).toHaveLength(count);
-  expect(screen.queryAllByText('Not configured')).toHaveLength(6 - count);
+  await rootCard('aws-eu');
+  expect([...container.querySelectorAll('.key-name')].slice(0, 3).map((name) => name.textContent))
+    .toEqual(['aws-eu', 'openbao-a', 'openbao-b']);
+  expect(container.querySelector('.section-header')?.textContent).toContain('3 keys');
 });
 
 it('draws tiers as tinted chips and states as soft pills, with no coloured card edge', async () => {
-  const { L1_SLOTS } = await import('../src/lib/l1Slots');
   const lifecycle = ['Active', 'PreActive', 'Failed'];
-  api.roots.mockResolvedValue(L1_SLOTS.slice(0, 3).map((slot, index) => ({
-    ...rootFixture, kind: slot.kind, metadata: {name: slot.name, namespace: 'default'},
-    spec: {...rootFixture.spec, configured: true},
-    status: {slotState: 'Configured', cryptoState: {lifecycleState: lifecycle[index]}}
+  api.roots.mockResolvedValue(['AWSRootKey', 'AzureRootKey', 'OpenBaoRootKey'].map((kind, index) => ({
+    ...rootFixture, kind, metadata: {name: `root-${index}`, namespace: 'default'},
+    status: {cryptoState: {lifecycleState: lifecycle[index]}}
   })));
   const {container} = render(<App/>); change(context('a'));
-  await screen.findByText('3 configured roots / 6 slots');
+  await rootCard('root-0');
   const tones = ['status-positive', 'status-critical', 'status-negative'];
   const pills = [...container.querySelectorAll('.key-card-header .status-pill')];
   expect(pills.map((pill) => [pill.textContent, tones.find((tone) => pill.classList.contains(tone))])).toEqual([
@@ -887,23 +854,4 @@ it('draws tiers as tinted chips and states as soft pills, with no coloured card 
   ]);
   expect(container.querySelector('.key-card-accent')).toBeNull();
   expect(container.querySelector('.section-header .tier-badge.tier-l1')?.textContent).toBe('L1');
-});
-
-it('places available providers after configured roots and retains their configure action', async () => {
-  api.roots.mockResolvedValue([rootFixture, {...rootFixture, kind:'AzureRootKey', metadata:{name:'azure',namespace:'default'}, spec:{configured:true}, status:{slotState:'Configured'}}]);
-  render(<App/>); change(context('a'));
-  const available = await screen.findByRole('region', {name:'Available providers'});
-  expect(screen.getByText('azure', {selector:'.key-name'}).compareDocumentPosition(available) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  fireEvent.click(within(available).getByLabelText('Configure Root Key'));
-  expect(screen.getByRole('dialog')).toBeTruthy();
-});
-
-it('keeps compact providers visible without exposing actions to a denied user', async () => {
-  api.roots.mockResolvedValue([rootFixture]);
-  vi.mocked(fetch).mockResolvedValue({ok:true,json:async()=>[]} as Response);
-  render(<App/>); change(context('a'));
-  const available = await screen.findByRole('region', {name:'Available providers'});
-  expect(within(available).getByText('AWS')).toBeTruthy();
-  expect(within(available).getByText('Not configured')).toBeTruthy();
-  expect(within(available).queryByRole('button')).toBeNull();
 });
