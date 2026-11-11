@@ -217,8 +217,8 @@ export const fixtureServiceKeys = (): ServiceKey[] => [
         {
           type: 'Ready',
           status: 'False',
-          reason: 'PendingActivation',
-          message: 'Key is waiting for OpenKCM activation.'
+          reason: 'Processing',
+          message: 'ServiceKey created, waiting for processing to complete'
         }
       ],
       cryptoState: {
