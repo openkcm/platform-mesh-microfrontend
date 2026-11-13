@@ -23,6 +23,12 @@ describe('readyProblem', () => {
       'TenantResolutionFailed',
       'Deactivated',
       'DomainKeyNotActive',
+      'ProviderUnsupported',
+      'CredentialsPending',
+      'CredentialsInvalid',
+      'CredentialsForbidden',
+      'InvalidAuth',
+      'ProviderBindFailed',
       'NotAKnownReason',
       undefined
     ];

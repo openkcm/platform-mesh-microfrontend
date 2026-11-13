@@ -109,7 +109,7 @@ const NAME_HINT = 'Lowercase letters, digits and dashes.';
 const EMPTY_OPENBAO_FIELDS = {
   serverAddress: '', enginePath: '', keyName: '', certAuthMountPath: '', certAuthRoleName: ''
 };
-const EMPTY_AWS_FIELDS = { region: '', keyUri: '', trustAnchorArn: '', profileArn: '', roleArn: '' };
+const EMPTY_AWS_FIELDS = { region: '', keyUri: '', roleArn: '', accessKeyId: '', secretAccessKey: '' };
 const EMPTY_AZURE_FIELDS = { vaultUrl: '', keyName: '', tenantId: '', clientId: '' };
 const COPY_FEEDBACK_MS = 1500;
 type SectionTier = 'L1' | 'L2' | 'L3';
@@ -212,7 +212,8 @@ const FormField = ({
   value,
   onChange,
   placeholder,
-  monospace
+  monospace,
+  password
 }: {
   id?: string;
   label: string;
@@ -222,6 +223,7 @@ const FormField = ({
   onChange: (v: string) => void;
   placeholder?: string;
   monospace?: boolean;
+  password?: boolean;
 }) => (
   <FlexBox direction={FlexBoxDirection.Column} style={{ gap: 2, minWidth: 0 }}>
     <Label for={id} required={required}>
@@ -229,6 +231,7 @@ const FormField = ({
     </Label>
     <Input
       id={id}
+      type={password ? 'Password' : undefined}
       value={value}
       placeholder={placeholder}
       onInput={(e) => onChange(inputValue(e))}
@@ -1652,6 +1655,11 @@ const App = () => {
     setRkOpen(true);
   };
 
+  const closeRkDialog = () => {
+    setRkOpen(false);
+    setRkAwsFields(EMPTY_AWS_FIELDS);
+  };
+
   const rkNameTaken = rootKeys.some((rk) => rk.kind === rootKeyKind(rkProvider) && rk.metadata.name === rkName);
   const rkValid = useMemo(() => {
     if (!RFC_1123.test(rkName)) return false;
@@ -1661,7 +1669,7 @@ const App = () => {
     }
     if (rkProvider === 'AWS') {
       const f = rkAwsFields;
-      return Boolean(f.region && f.keyUri && f.trustAnchorArn && f.profileArn && f.roleArn);
+      return Boolean(f.region && f.keyUri && f.roleArn && f.accessKeyId && f.secretAccessKey);
     }
     const f = rkAzureFields;
     return Boolean(f.vaultUrl && f.keyName && f.tenantId && f.clientId);
@@ -1679,7 +1687,14 @@ const App = () => {
       if (rkProvider === 'OpenBao') {
         await createOpenBaoRootKey(accountClient, { ...target, ...rkObFields });
       } else if (rkProvider === 'AWS') {
-        await createAWSRootKey(accountClient, { ...target, ...rkAwsFields });
+        await createAWSRootKey(accountClient, {
+          ...target,
+          region: rkAwsFields.region.trim(),
+          keyUri: rkAwsFields.keyUri.trim(),
+          roleArn: rkAwsFields.roleArn.trim(),
+          accessKeyId: rkAwsFields.accessKeyId.trim(),
+          secretAccessKey: rkAwsFields.secretAccessKey.trim()
+        });
       } else {
         await createAzureRootKey(accountClient, {
           ...target,
@@ -1697,6 +1712,7 @@ const App = () => {
       if (accountClient.signal?.aborted) return;
       setError(`Add Root Key failed: ${(err as Error).message}`);
     } finally {
+      setRkAwsFields((f) => ({ ...f, accessKeyId: '', secretAccessKey: '' }));
       if (accountClient.signal?.aborted) return;
       setRkBusy(false);
     }
@@ -2283,13 +2299,13 @@ const App = () => {
       <Dialog
         open={rkOpen && canManageL1}
         headerText="Add Root Key"
-        onClose={() => setRkOpen(false)}
+        onClose={closeRkDialog}
         footer={
           <Bar
             design="Footer"
             endContent={
               <>
-                <Button design="Transparent" onClick={() => setRkOpen(false)}>
+                <Button design="Transparent" onClick={closeRkDialog}>
                   Cancel
                 </Button>
                 <Button
@@ -2407,30 +2423,31 @@ const App = () => {
                   onChange={(v) => setRkAwsFields({ ...rkAwsFields, keyUri: v })}
                 />
               </FieldGroup>
-              <FieldGroup title="Roles Anywhere (X.509 federation)">
-                <FormField
-                  label="Trust anchor ARN"
-                  required
-                  monospace
-                  placeholder="arn:aws:rolesanywhere:eu-central-1:123456789012:trust-anchor/..."
-                  value={rkAwsFields.trustAnchorArn}
-                  onChange={(v) => setRkAwsFields({ ...rkAwsFields, trustAnchorArn: v })}
-                />
-                <FormField
-                  label="Profile ARN"
-                  required
-                  monospace
-                  placeholder="arn:aws:rolesanywhere:eu-central-1:123456789012:profile/..."
-                  value={rkAwsFields.profileArn}
-                  onChange={(v) => setRkAwsFields({ ...rkAwsFields, profileArn: v })}
-                />
+              <FieldGroup title="Access key">
                 <FormField
                   label="Role ARN"
                   required
+                  hint="The IAM role the access key's user assumes to reach the KMS key."
                   monospace
                   placeholder="arn:aws:iam::123456789012:role/..."
                   value={rkAwsFields.roleArn}
                   onChange={(v) => setRkAwsFields({ ...rkAwsFields, roleArn: v })}
+                />
+                <FormField
+                  label="Access key ID"
+                  required
+                  monospace
+                  placeholder="AKIA..."
+                  value={rkAwsFields.accessKeyId}
+                  onChange={(v) => setRkAwsFields({ ...rkAwsFields, accessKeyId: v })}
+                />
+                <FormField
+                  label="Secret access key"
+                  required
+                  password
+                  hint="Kept in a Secret named awsrootkey-<root key name> in this namespace, not in the root key. It is not shown again."
+                  value={rkAwsFields.secretAccessKey}
+                  onChange={(v) => setRkAwsFields({ ...rkAwsFields, secretAccessKey: v })}
                 />
               </FieldGroup>
             </>
