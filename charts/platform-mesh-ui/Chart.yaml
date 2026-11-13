@@ -2,8 +2,8 @@ apiVersion: v2
 name: platform-mesh-ui
 description: OpenKCM provider UI for the Platform Mesh portal (React + UI5 Web Components).
 type: application
-version: 0.13.0 # x-release-please-version
-appVersion: "0.13.0" # x-release-please-version
+version: 0.14.0 # x-release-please-version
+appVersion: "0.14.0" # x-release-please-version
 home: https://github.com/openkcm/platform-mesh-microfrontend
 sources:
   - https://github.com/openkcm/platform-mesh-microfrontend
