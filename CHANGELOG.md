@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.0 (2026-11-13)
+
+## What's Changed
+* feat: plain-language key problems, same scope switch in Edit by @ykld-work in https://github.com/openkcm/platform-mesh-microfrontend/pull/35
+
+
+**Full Changelog**: https://github.com/openkcm/platform-mesh-microfrontend/compare/v0.13.0...v0.14.0
+
 ## 0.13.0 (2026-11-09)
 
 ## What's Changed
