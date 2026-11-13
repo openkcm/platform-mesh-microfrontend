@@ -94,6 +94,79 @@ it('does not invalidate permission for an unrelated write error', async () => {
   expect(onL1PermissionDenied).not.toHaveBeenCalled();
 });
 
+describe('createAWSRootKey', () => {
+  const input = {
+    namespace: 'default',
+    name: 'aws-root',
+    tenantNameRef: 'test-account',
+    region: 'eu-central-1',
+    keyUri: 'arn:aws:kms:eu-central-1:123456789012:key/test',
+    roleArn: 'arn:aws:iam::123456789012:role/test',
+    accessKeyId: 'AKIATESTKEYID',
+    secretAccessKey: 's3cr3t-value'
+  };
+  const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200 });
+  const bodyOf = (call: number) => JSON.parse(String(fetchMock.mock.calls[call]?.[1]?.body));
+  const created = json({
+    data: { operations_openkcm_io: { v1alpha1: { createAWSRootKey: { metadata: { name: 'aws-root', uid: 'uid-1' } } } } }
+  });
+
+  it('writes the complete root key first, then its credentials Secret, owned by the root key', async () => {
+    fetchMock
+      .mockResolvedValueOnce(created.clone())
+      .mockResolvedValueOnce(json({ data: { v1: { createSecret: { metadata: { name: 'awsrootkey-aws-root' } } } } }));
+
+    await createAWSRootKey(client, input);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = bodyOf(0);
+    expect(first.variables.object.spec).toEqual({
+      tenantNameRef: 'test-account',
+      region: input.region,
+      keyUri: input.keyUri,
+      auth: {
+        method: 'AccessKey',
+        accessKey: { roleArn: input.roleArn, secretRef: { name: 'awsrootkey-aws-root', namespace: 'default' } }
+      }
+    });
+    expect(JSON.stringify(first)).not.toContain(input.secretAccessKey);
+    expect(JSON.stringify(first)).not.toContain(input.accessKeyId);
+
+    const second = bodyOf(1);
+    expect(objectInputType(second.query)).toBe('V1Secret_Input!');
+    expect(second.query).not.toMatch(/\bdata\b/);
+    expect(second.variables.object).toEqual({
+      metadata: {
+        name: 'awsrootkey-aws-root',
+        namespace: 'default',
+        labels: { 'openkcm.io/root-key-credentials': 'true' },
+        ownerReferences: [
+          { apiVersion: 'operations.openkcm.io/v1alpha1', kind: 'AWSRootKey', name: 'aws-root', uid: 'uid-1' }
+        ]
+      },
+      type: 'Opaque',
+      stringData: { accessKeyId: input.accessKeyId, secretAccessKey: input.secretAccessKey }
+    });
+  });
+
+  it('removes the root key again when its Secret cannot be created, and does not leak the credentials', async () => {
+    fetchMock
+      .mockResolvedValueOnce(created.clone())
+      .mockResolvedValueOnce(json({ errors: [{ message: `invalid value ${input.secretAccessKey}` }] }))
+      .mockResolvedValueOnce(json({ data: { operations_openkcm_io: { v1alpha1: { deleteAWSRootKey: true } } } }));
+
+    const error = (await createAWSRootKey(client, input).catch((e: Error) => e)) as Error;
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain('awsrootkey-aws-root');
+    expect(error.message).toContain('removed again');
+    expect(error.message).not.toContain(input.secretAccessKey);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(bodyOf(2).query).toContain('deleteAWSRootKey');
+    expect(bodyOf(2).variables).toEqual({ ns: 'default', name: 'aws-root' });
+  });
+});
+
 describe('OpenKCM GraphQL mutation schema contract', () => {
   const mutationCases: Array<{
     operation: string;
@@ -124,21 +197,6 @@ describe('OpenKCM GraphQL mutation schema contract', () => {
           keyName: 'root-key',
           certAuthMountPath: 'cert',
           certAuthRoleName: 'openkcm'
-        })
-    },
-    {
-      operation: 'createAWSRootKey',
-      inputType: 'OperationsOpenkcmIoV1alpha1AWSRootKey_Input!',
-      invoke: () =>
-        createAWSRootKey(client, {
-          namespace: 'default',
-          name: 'aws-root',
-          tenantNameRef: 'test-account',
-          region: 'eu-central-1',
-          keyUri: 'arn:aws:kms:eu-central-1:123456789012:key/test',
-          trustAnchorArn: 'arn:aws:rolesanywhere:eu-central-1:123456789012:trust-anchor/test',
-          profileArn: 'arn:aws:rolesanywhere:eu-central-1:123456789012:profile/test',
-          roleArn: 'arn:aws:iam::123456789012:role/test'
         })
     },
     {
@@ -433,7 +491,7 @@ it('requests the configured flag and provider fields from every root type',async
   await listRootKeys(client,'default');
   const request=lastRequest();
   expect(request.query.match(/ configured }/g)).toHaveLength(6);
-  expect(request.query).toContain('rolesAnywhere { trustAnchorArn profileArn roleArn }');
+  expect(request.query).toContain('auth { method accessKey { roleArn secretRef { name namespace } } }');
   expect(request.query).toContain('certAuth { authMountPath roleName }');
   expect(request.query).toContain('federatedIdentity { tenantId clientId }');
 });
