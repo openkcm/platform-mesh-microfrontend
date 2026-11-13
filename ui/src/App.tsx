@@ -97,6 +97,7 @@ import {
   serviceKeyOn
 } from './lib/domainKeys';
 import { isDeleting, keyLifecycle } from './lib/lifecycle';
+import { readyProblem, type ProblemContext, type ReadyCondition } from './lib/conditions';
 import type { DataEncryptionKey, DomainKey, DomainKeyScope, RootKey, ServiceKey, Tenant } from './types';
 
 const RFC_1123 = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
@@ -281,6 +282,10 @@ const lifecycleActionLabel = (current?: string): 'Activate' | 'Deactivate' | nul
 // button on the child.
 const canActivateUnderParent = (parentLifecycle?: string): boolean =>
   parentLifecycle === 'Active';
+
+// A cascade also writes Deactivated into the child's spec, so only a key that should be Active is held by its parent.
+const blockingParent = (key: { spec: { lifecycle?: string } }, parentActive: boolean, parentKind: string) =>
+  key.spec.lifecycle !== 'Deactivated' && !parentActive ? parentKind : undefined;
 
 const deleteKindLabel = (kind: DeleteTarget['kind']): string => {
   if (kind === 'RootKey') return 'Root Key';
@@ -783,12 +788,14 @@ const KeyCard = ({
   </Card>
 );
 
-const ProblemStrip = ({ ready }: { ready?: { status: string; message?: string } }) =>
-  ready && ready.status !== 'True' && ready.message ? (
-    <MessageStrip design="Critical" hideCloseButton>
-      {ready.message}
+const ProblemStrip = ({ ready, context }: { ready?: ReadyCondition; context: ProblemContext }) => {
+  const problem = readyProblem(ready, context);
+  return problem ? (
+    <MessageStrip design={problem.design} hideCloseButton>
+      {problem.text}
     </MessageStrip>
   ) : null;
+};
 
 const Chip = ({ text, kind }: { text: string; kind?: string }) => (
   <span
@@ -842,6 +849,7 @@ const ServiceKeyCard = ({
   canAddDek: boolean;
 }) => {
   const lifecycle = keyLifecycle(sk);
+  const parentActive = canActivateUnderParent(parent && keyLifecycle(parent));
   return (
     <KeyCard
       tier="L3"
@@ -855,11 +863,7 @@ const ServiceKeyCard = ({
           <LifecycleToggle
             lifecycle={lifecycle}
             busyAction={busyAction}
-            blockedReason={
-              canActivateUnderParent(parent && keyLifecycle(parent))
-                ? undefined
-                : 'Cannot activate while the Domain Key is not Active.'
-            }
+            blockedReason={parentActive ? undefined : 'Cannot activate while the Domain Key is not Active.'}
             onToggle={onLifecycleToggle}
           />
           <ActionSlot />
@@ -873,7 +877,10 @@ const ServiceKeyCard = ({
         </>
       }
     >
-      <ProblemStrip ready={conditionByType(sk.status?.conditions, 'Ready')} />
+      <ProblemStrip
+        ready={conditionByType(sk.status?.conditions, 'Ready')}
+        context={{ kind: 'Service Key', inactiveParent: blockingParent(sk, parentActive, 'Domain Key') }}
+      />
       <div className="key-facts">
         <Fact area="id" label="Key ID">
           <CopyableId id={sk.status?.cryptoState?.id} />
@@ -1096,7 +1103,7 @@ const RootKeyCard = ({
         </>
       }
     >
-      <ProblemStrip ready={conditionByType(rk.status?.conditions, 'Ready')} />
+      <ProblemStrip ready={conditionByType(rk.status?.conditions, 'Ready')} context={{ kind: 'Root Key' }} />
       <div className="key-facts">
         <Fact area="id" label="Key ID"><CopyableId id={rk.status?.cryptoState?.id} /></Fact>
       </div>
@@ -1142,6 +1149,7 @@ const DomainKeyCard = ({
           rk.metadata.name === primary.name
       )
     : undefined;
+  const rootActive = !primary || canActivateUnderParent(primaryRk && keyLifecycle(primaryRk));
 
   return (
     <KeyCard
@@ -1182,7 +1190,10 @@ const DomainKeyCard = ({
         </>
       }
     >
-      <ProblemStrip ready={conditionByType(domainKey.status?.conditions, 'Ready')} />
+      <ProblemStrip
+        ready={conditionByType(domainKey.status?.conditions, 'Ready')}
+        context={{ kind: 'Domain Key', inactiveParent: blockingParent(domainKey, rootActive, 'Root Key') }}
+      />
       <div className="key-facts">
         <Fact area="id" label="Key ID">
           <CopyableId id={domainKey.status?.cryptoState?.id} />
@@ -2031,6 +2042,8 @@ const App = () => {
 
   const dkNamespaceKey = namespaceDomainKey(domainKeysIn(dkNamespace));
 
+  const dkDialogScope = dkEditing ? domainKeyScope(dkEditing) : dkScope;
+
   // Account level creates System keys only; namespace level creates Namespace and Instance ones.
   const dkScopeAllowed = (scope: DomainKeyScope) =>
     scope === 'System'
@@ -2503,30 +2516,32 @@ const App = () => {
         <FlexBox direction={FlexBoxDirection.Column} style={{ gap: '1rem', width: DIALOG_WIDTH, padding: '0.5rem 0' }}>
           <FlexBox direction={FlexBoxDirection.Column} style={{ gap: 2 }}>
             <Label required>Scope</Label>
+            <SegmentedButton
+              onSelectionChange={(e) => {
+                const value = (e.detail.selectedItems[0] as HTMLElement | undefined)?.dataset.value;
+                if (!dkEditing && (value === 'Namespace' || value === 'Instance')) changeDkScope(value);
+              }}
+            >
+              {DOMAIN_KEY_SCOPES.map((scope) => (
+                <SegmentedButtonItem
+                  key={scope}
+                  data-value={scope}
+                  selected={dkDialogScope === scope}
+                  disabled={dkEditing ? dkDialogScope !== scope : !dkScopeAllowed(scope)}
+                >
+                  {scope}
+                </SegmentedButtonItem>
+              ))}
+            </SegmentedButton>
+            <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
+              {SCOPE_HINTS[dkDialogScope]}
+            </span>
             {dkEditing ? (
-              <Input value={domainKeyScope(dkEditing)} readonly />
+              <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
+                The scope cannot be changed after the key is created.
+              </span>
             ) : (
               <>
-                <SegmentedButton
-                  onSelectionChange={(e) => {
-                    const value = (e.detail.selectedItems[0] as HTMLElement | undefined)?.dataset.value;
-                    if (value === 'Namespace' || value === 'Instance') changeDkScope(value);
-                  }}
-                >
-                  {DOMAIN_KEY_SCOPES.map((scope) => (
-                    <SegmentedButtonItem
-                      key={scope}
-                      data-value={scope}
-                      selected={dkScope === scope}
-                      disabled={!dkScopeAllowed(scope)}
-                    >
-                      {scope}
-                    </SegmentedButtonItem>
-                  ))}
-                </SegmentedButton>
-                <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
-                  {SCOPE_HINTS[dkScope]}
-                </span>
                 {dkScope !== 'System' && dkNamespaceKey && (
                   <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
                     Namespace is taken by {dkNamespaceKey.metadata.name}.

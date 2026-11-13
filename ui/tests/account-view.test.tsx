@@ -444,6 +444,20 @@ it('lets Edit link a root key to a DomainKey', async () => {
   await waitFor(()=>expect(api.linkRoot).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({namespace:'team-a',name:'dk',rootKey:{kind:'AWSRootKey',namespace:'default',name:'aws'}})));
 });
 
+it.each(['Instance','Namespace'])('shows the scope of a %s Domain Key in Edit as a locked switch', async (scope) => {
+  api.all.mockResolvedValue(snapshot([{...key('team-a','dk'),spec:{...key('team-a').spec,scope}}]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('dk',{selector:'.key-name'});
+  fireEvent.click(screen.getByLabelText('Edit Domain Key'));
+  const dialog=screen.getByRole('dialog');
+  const items=scopeSwitch(dialog).getAllByRole('button');
+  expect(items.map(item=>item.textContent)).toEqual(['System','Namespace','Instance']);
+  expect(items.filter(pressed).map(item=>item.textContent)).toEqual([scope]);
+  expect(items.filter(item=>!(item as HTMLButtonElement).disabled).map(item=>item.textContent)).toEqual([scope]);
+  expect(within(dialog).queryByDisplayValue(scope)).toBeNull();
+  expect(within(dialog).getByText('The scope cannot be changed after the key is created.')).toBeTruthy();
+  expect(within(dialog).queryByText(/is taken by|^To create a/)).toBeNull();
+});
 
 it('mints a ServiceKey in the selected namespace when DomainKey names match', async () => {
   listByNamespace({'default':[systemKey('same-parent')],'team-b':[key('team-b','same-parent')]});
@@ -698,9 +712,25 @@ it('keeps a root key that failed to register deletable but not toggleable', asyn
     {type:'Ready',status:'False',reason:'RootKeyCreateFailed',message:'Backend registration rejected'}
   ]}}]);
   render(<App/>); change(context('a'));
-  await screen.findByText(/Backend registration rejected/);
+  await screen.findByText(/This Root Key could not be created/);
+  expect(screen.queryByText(/Backend registration rejected/)).toBeNull();
   expect((screen.getByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(false);
   expect(screen.queryByText('Deactivate',{selector:'button'})).toBeNull();
+});
+
+it.each([
+  ['Active', 'This Domain Key was deactivated because the Root Key it depends on is not active.'],
+  ['Deactivated', 'This Domain Key is deactivated and cannot be used.']
+])('words a deactivated Domain Key with spec %s under a missing Root Key', async (lifecycle, text) => {
+  const gone = {kind:'AWSRootKey',name:'gone',namespace:'default'};
+  api.all.mockResolvedValue(snapshot([{...key('default','orphan'),
+    spec:{tenantNameRef:'a',scope:'Namespace',lifecycle,primaryRootKeyRef:gone},
+    status:{cryptoState:{lifecycleState:'Deactivated'},conditions:[
+      {type:'Ready',status:'False',reason:'Deactivated',message:'DomainKey deactivated per spec.lifecycle.'}
+    ]}}]));
+  render(<App/>); change({...context('a'),viewLevel:'account'});
+  await screen.findByText(text);
+  expect(screen.queryByText(/per spec\.lifecycle/)).toBeNull();
 });
 
 it('hides empty legacy slots', async () => {
