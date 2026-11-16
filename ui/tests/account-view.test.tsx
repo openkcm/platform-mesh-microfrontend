@@ -7,7 +7,7 @@ const api = vi.hoisted(() => ({
   initialContext: null as RuntimeContext | null,
   context: undefined as undefined | ((context: RuntimeContext) => void),
   rootEvent: undefined as undefined | (() => void),
-  createRoot: vi.fn(), removeRoot: vi.fn(), lifecycleRoot: vi.fn(),
+  createRoot: vi.fn(), removeRoot: vi.fn(),
   services: vi.fn(), all: vi.fn(), list: vi.fn(), roots: vi.fn(), tenants: vi.fn(), remove: vi.fn(), createDomain: vi.fn(), createService: vi.fn(), createData: vi.fn(), navigate: vi.fn(), stop: vi.fn(), linkRoot: vi.fn(), unlinkRoot: vi.fn()
 }));
 vi.mock('../src/lib/luigi', async (original) => ({
@@ -26,7 +26,7 @@ vi.mock('../src/lib/kcp', async (original) => ({
   subscribeDomainKeys: () => api.stop, subscribeServiceKeys: () => api.stop,
   subscribeRootKeys: (_client:unknown,_namespace:unknown,onEvent:()=>void) => { api.rootEvent=onEvent; return api.stop; },
   createAWSRootKey: api.createRoot, createAzureRootKey: api.createRoot, createOpenBaoRootKey: api.createRoot,
-  deleteRootKey: api.removeRoot, setRootKeyLifecycle: api.lifecycleRoot, subscribeDataEncryptionKeys: () => api.stop,
+  deleteRootKey: api.removeRoot, subscribeDataEncryptionKeys: () => api.stop,
   deleteDomainKey: api.remove, linkDomainKeyRoot: api.linkRoot, unlinkDomainKeyRoot: api.unlinkRoot, createDomainKey: api.createDomain, createServiceKey: api.createService, createDataEncryptionKey: api.createData
 }));
 vi.mock('@ui5/webcomponents-base/dist/asset-registries/Icons.js', () => ({ registerIcon: () => {} }));
@@ -66,7 +66,7 @@ const pressed = (button: HTMLElement) => button.getAttribute('aria-pressed') ===
 beforeEach(() => {
   sessionStorage.clear();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ok:true,json:async()=>[{resource:'l1keyaccesses',name:'account-l1',actions:['manage_l1']}]}));
-  api.createRoot.mockReset(); api.removeRoot.mockReset(); api.lifecycleRoot.mockReset();
+  api.createRoot.mockReset(); api.removeRoot.mockReset();
   vi.clearAllMocks(); api.initialContext = null; api.all.mockResolvedValue(snapshot([])); api.list.mockResolvedValue(snapshot([]));
   api.services.mockResolvedValue(snapshot([])); api.roots.mockResolvedValue([]); api.tenants.mockResolvedValue([]); api.remove.mockResolvedValue(undefined); api.createDomain.mockResolvedValue(undefined); api.createService.mockResolvedValue(undefined); api.createData.mockResolvedValue(undefined); api.navigate.mockResolvedValue(undefined);
 });
@@ -707,19 +707,26 @@ it('blocks deleting a root key that a Domain Key uses', async () => {
   expect(api.removeRoot).not.toHaveBeenCalled();
 });
 
-it('keeps a root key that failed to register deletable but not toggleable', async () => {
-  api.roots.mockResolvedValue([{...rootFixture,status:{conditions:[
-    {type:'Ready',status:'False',reason:'RootKeyCreateFailed',message:'Backend registration rejected'}
-  ]}}]);
+it('shows a root key as the customer data only, without status or lifecycle actions', async () => {
+  const arn = 'arn:aws:kms:eu-central-1:000000000000:key/abc';
+  api.roots.mockResolvedValue([{...rootFixture,spec:{...rootFixture.spec,region:'eu-central-1',keyUri:arn},
+    status:{...rootFixture.status,conditions:[
+      {type:'Ready',status:'False',reason:'RootKeyCreateFailed',message:'Backend registration rejected'}
+    ]}}]);
   render(<App/>); change(context('a'));
-  await screen.findByText(/This Root Key could not be created/);
-  expect(screen.queryByText(/Backend registration rejected/)).toBeNull();
+  const card = (await rootCard('aws-eu')).closest('.key-card-content') as HTMLElement;
+  expect(within(card).getByText('AWS · eu-central-1')).toBeTruthy();
+  expect(within(card).getByText('Key ARN')).toBeTruthy();
+  expect(within(card).getByText(arn)).toBeTruthy();
+  expect(card.querySelector('.status-pill')).toBeNull();
+  expect(within(card).queryByText(/could not be created/)).toBeNull();
+  expect(within(card).queryByText('Deactivate',{selector:'button'})).toBeNull();
+  expect(within(card).queryByText('Activate',{selector:'button'})).toBeNull();
   expect((screen.getByLabelText('Delete Root Key') as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.queryByText('Deactivate',{selector:'button'})).toBeNull();
 });
 
 it.each([
-  ['Active', 'This Domain Key was deactivated because the Root Key it depends on is not active.'],
+  ['Active', 'This Domain Key is deactivated and cannot be used.'],
   ['Deactivated', 'This Domain Key is deactivated and cannot be used.']
 ])('words a deactivated Domain Key with spec %s under a missing Root Key', async (lifecycle, text) => {
   const gone = {kind:'AWSRootKey',name:'gone',namespace:'default'};
@@ -748,7 +755,7 @@ it('shows an empty L1 section when only empty slots exist', async () => {
   expect(await addRootKey()).toBeTruthy();
 });
 
-it('offers only Active roots as L2 parents when editing',async()=>{
+it('offers every added root as an L2 parent when editing',async()=>{
   api.roots.mockResolvedValue([
     emptySlot,
     {...rootFixture,kind:'AzureRootKey',metadata:{name:'azure-eu',namespace:'default'}},
@@ -761,8 +768,8 @@ it('offers only Active roots as L2 parents when editing',async()=>{
   fireEvent.click(screen.getByLabelText('Edit Domain Key'));
   const options=within(screen.getByRole('dialog')).getAllByRole('option').map(option=>option.textContent);
   expect(options).toContain('azure-eu');
+  expect(options).toContain('openbao');
   expect(options).not.toContain('azure');
-  expect(options).not.toContain('openbao');
 });
 
 
@@ -871,12 +878,12 @@ it('shows one card per root key, with several keys per provider', async () => {
 
 it('draws tiers as tinted chips and states as soft pills, with no coloured card edge', async () => {
   const lifecycle = ['Active', 'PreActive', 'Failed'];
-  api.roots.mockResolvedValue(['AWSRootKey', 'AzureRootKey', 'OpenBaoRootKey'].map((kind, index) => ({
-    ...rootFixture, kind, metadata: {name: `root-${index}`, namespace: 'default'},
-    status: {cryptoState: {lifecycleState: lifecycle[index]}}
-  })));
+  api.roots.mockResolvedValue([rootFixture]);
+  api.all.mockResolvedValue(snapshot(lifecycle.map((state, index) => ({
+    ...key('default', `dk-${index}`), status: {cryptoState: {lifecycleState: state}}
+  }))));
   const {container} = render(<App/>); change(context('a'));
-  await rootCard('root-0');
+  await rootCard('dk-0');
   const tones = ['status-positive', 'status-critical', 'status-negative'];
   const pills = [...container.querySelectorAll('.key-card-header .status-pill')];
   expect(pills.map((pill) => [pill.textContent, tones.find((tone) => pill.classList.contains(tone))])).toEqual([

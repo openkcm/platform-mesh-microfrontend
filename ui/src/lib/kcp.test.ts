@@ -19,7 +19,6 @@ import {
   listDomainKeys,
   setDataEncryptionKeyLifecycle,
   setDomainKeyLifecycle,
-  setRootKeyLifecycle,
   setServiceKeyLifecycle,
   unlinkDomainKeyRoot,
   type KcpClientOptions
@@ -76,7 +75,7 @@ it.each(['http', 'graphql'])('invalidates L1 permission after a %s write denial'
   const onL1PermissionDenied = vi.fn();
   const message = 'admission webhook denied the request: The L1 Key Manager role is required.';
   fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({errors:[{message}]}), {status:failure === 'http' ? 403 : 200}));
-  await expect(setRootKeyLifecycle({...client, onL1PermissionDenied}, 'AWSRootKey', 'default', 'aws', 'Deactivated')).rejects.toThrow(failure === 'http' ? '403' : message);
+  await expect(deleteAWSRootKey({...client, onL1PermissionDenied}, 'default', 'aws')).rejects.toThrow(failure === 'http' ? '403' : message);
   expect(onL1PermissionDenied).toHaveBeenCalledOnce();
 });
 
@@ -90,7 +89,7 @@ it.each([403, 503])('does not invalidate permission after a read fails with HTTP
 it('does not invalidate permission for an unrelated write error', async () => {
   const onL1PermissionDenied = vi.fn();
   fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({errors:[{message:'Backend unavailable'}]})));
-  await expect(setRootKeyLifecycle({...client, onL1PermissionDenied}, 'AWSRootKey', 'default', 'aws', 'Deactivated')).rejects.toThrow('Backend unavailable');
+  await expect(deleteAWSRootKey({...client, onL1PermissionDenied}, 'default', 'aws')).rejects.toThrow('Backend unavailable');
   expect(onL1PermissionDenied).not.toHaveBeenCalled();
 });
 
@@ -234,21 +233,6 @@ describe('OpenKCM GraphQL mutation schema contract', () => {
           tenantNameRef: 'test-account',
           serviceKeyRef: 'service-key'
         })
-    },
-    {
-      operation: 'updateOpenBaoRootKey',
-      inputType: 'OperationsOpenkcmIoV1alpha1OpenBaoRootKey_Input!',
-      invoke: () => setRootKeyLifecycle(client, 'OpenBaoRootKey', 'default', 'openbao-root', 'Deactivated')
-    },
-    {
-      operation: 'updateAWSRootKey',
-      inputType: 'OperationsOpenkcmIoV1alpha1AWSRootKey_Input!',
-      invoke: () => setRootKeyLifecycle(client, 'AWSRootKey', 'default', 'aws-root', 'Deactivated')
-    },
-    {
-      operation: 'updateAzureRootKey',
-      inputType: 'OperationsOpenkcmIoV1alpha1AzureRootKey_Input!',
-      invoke: () => setRootKeyLifecycle(client, 'AzureRootKey', 'default', 'azure-root', 'Deactivated')
     },
     {
       operation: 'updateDomainKey',
