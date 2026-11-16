@@ -48,6 +48,20 @@ const WORDING: Record<string, Wording> = {
   RootKeyResolutionFailed: notice(() =>
     'The Root Key it is linked to cannot be used. It may be missing, not active or not allowed here.'),
 
+  CredentialsPending: notice(({ kind }) =>
+    `Waiting for the access key of this ${kind}. Add it to finish the setup.`),
+  ProviderUnsupported: notice(({ kind }) =>
+    `This ${kind} cannot be connected to its key provider yet. It keeps trying automatically.`),
+
+  InvalidAuth: failure(({ kind }) =>
+    `This ${kind} is missing its authentication details. Edit it and provide the access key.`),
+  CredentialsInvalid: failure(({ kind }) =>
+    `The access key of this ${kind} is incomplete or malformed. Provide a valid access key ID and secret.`),
+  CredentialsForbidden: failure(({ kind }) =>
+    `The access key of this ${kind} could not be read. Check that it is shared with the key service.`),
+  ProviderBindFailed: failure(({ kind }) =>
+    `The key provider did not accept this ${kind}'s credentials. ${RETRY}`),
+
   TenantResolutionFailed: failure(({ kind }) =>
     `This ${kind} could not be set up because your account details could not be read. ${RETRY}`),
   RootKeyCreateFailed: failure(created),

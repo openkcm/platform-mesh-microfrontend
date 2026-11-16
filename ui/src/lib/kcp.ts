@@ -424,22 +424,45 @@ export interface CreateAWSRootKeyInput {
   tenantNameRef: string;
   region: string;
   keyUri: string;
-  trustAnchorArn: string;
-  profileArn: string;
   roleArn: string;
+  accessKeyId: string;
+  secretAccessKey: string;
 }
+
+export const AWS_CREDENTIALS_SECRET_PREFIX = 'awsrootkey-';
+export const ROOT_KEY_CREDENTIALS_LABEL = 'openkcm.io/root-key-credentials';
+export const awsCredentialsSecretName = (rootKeyName: string): string => `${AWS_CREDENTIALS_SECRET_PREFIX}${rootKeyName}`;
 
 const CREATE_AWSROOTKEY_MUTATION = `
   mutation CreateAWSRootKey($ns: String!, $object: ${openKcmInputType('AWSRootKey')}!) {
     operations_openkcm_io {
       v1alpha1 {
         createAWSRootKey(namespace: $ns, object: $object) {
-          metadata { name namespace }
+          metadata { name namespace uid }
         }
       }
     }
   }
 `;
+
+const CREATE_SECRET_MUTATION = `
+  mutation CreateSecret($ns: String!, $object: V1Secret_Input!) {
+    v1 {
+      createSecret(namespace: $ns, object: $object) {
+        metadata { name }
+      }
+    }
+  }
+`;
+
+interface CreateAWSRootKeyResponse {
+  operations_openkcm_io: {
+    v1alpha1: { createAWSRootKey: { metadata: { name: string; uid?: string } } };
+  };
+}
+
+const redact = (message: string, ...secrets: string[]): string =>
+  secrets.filter(Boolean).reduce((text, secret) => text.split(secret).join('***'), message);
 
 export const createAWSRootKey = async (
   opts: KcpClientOptions,
@@ -449,23 +472,59 @@ export const createAWSRootKey = async (
     await new Promise((r) => setTimeout(r, 350));
     return;
   }
+  const secretName = awsCredentialsSecretName(input.name);
   const object = {
     metadata: { name: input.name, namespace: input.namespace },
     spec: {
       tenantNameRef: input.tenantNameRef,
       region: input.region,
       keyUri: input.keyUri,
-      rolesAnywhere: {
-        trustAnchorArn: input.trustAnchorArn,
-        profileArn: input.profileArn,
-        roleArn: input.roleArn
+      auth: {
+        method: 'AccessKey',
+        accessKey: {
+          roleArn: input.roleArn,
+          secretRef: { name: secretName, namespace: input.namespace }
+        }
       }
     }
   };
-  await graphqlFetch(opts, {
+  const created = await graphqlFetch<CreateAWSRootKeyResponse>(opts, {
     query: CREATE_AWSROOTKEY_MUTATION,
     variables: { ns: input.namespace, object }
   });
+  const uid = created.operations_openkcm_io?.v1alpha1?.createAWSRootKey?.metadata?.uid;
+  try {
+    if (!uid) throw new Error('the gateway returned no uid for the new root key');
+    await graphqlFetch(opts, {
+      query: CREATE_SECRET_MUTATION,
+      variables: {
+        ns: input.namespace,
+        object: {
+          metadata: {
+            name: secretName,
+            namespace: input.namespace,
+            labels: { [ROOT_KEY_CREDENTIALS_LABEL]: 'true' },
+            ownerReferences: [
+              { apiVersion: 'operations.openkcm.io/v1alpha1', kind: 'AWSRootKey', name: input.name, uid }
+            ]
+          },
+          type: 'Opaque',
+          stringData: { accessKeyId: input.accessKeyId, secretAccessKey: input.secretAccessKey }
+        }
+      }
+    });
+  } catch (err) {
+    let rollback = 'The root key was removed again.';
+    try {
+      await deleteAWSRootKey({ ...opts, signal: undefined }, input.namespace, input.name);
+    } catch (rollbackErr) {
+      rollback = `The root key could not be removed again: ${(rollbackErr as Error).message}`;
+    }
+    throw new Error(
+      `The credentials Secret "${secretName}" could not be created: ` +
+        `${redact((err as Error).message, input.accessKeyId, input.secretAccessKey)}. ${rollback}`
+    );
+  }
 };
 
 export interface CreateAzureRootKeyInput {
@@ -645,7 +704,7 @@ const ROOTKEY_QUERY = `
   query RootKeys($ns: String!) {
     operations_openkcm_io {
       v1alpha1 {
-        AWSRootKeys(namespace: $ns) {${rootKeyItems('tenantNameRef region keyUri endpointUrl lifecycle rolesAnywhere { trustAnchorArn profileArn roleArn }')}
+        AWSRootKeys(namespace: $ns) {${rootKeyItems('tenantNameRef region keyUri endpointUrl lifecycle auth { method accessKey { roleArn secretRef { name namespace } } }')}
         }
         AzureRootKeys(namespace: $ns) {${rootKeyItems('tenantNameRef vaultUrl keyName keyVersion lifecycle federatedIdentity { tenantId clientId }')}
         }
