@@ -4,7 +4,6 @@ import {
   BusyIndicator,
   Button,
   Card,
-  CardHeader,
   Dialog,
   FlexBox,
   FlexBoxAlignItems,
@@ -74,7 +73,6 @@ import {
   listTenants,
   setDataEncryptionKeyLifecycle,
   setDomainKeyLifecycle,
-  setRootKeyLifecycle,
   setServiceKeyLifecycle,
   subscribeDataEncryptionKeys,
   subscribeDomainKeys,
@@ -270,7 +268,7 @@ type DeleteTarget =
   | { kind: 'ServiceKey'; name: string; namespace: string }
   | { kind: 'DEK'; name: string; namespace: string };
 
-type DeactivateTarget = DeleteTarget;
+type DeactivateTarget = Exclude<DeleteTarget, { kind: 'RootKey' }>;
 
 type DependentWarning = { kindLabel: string; names: string[]; unknown?: boolean };
 
@@ -286,7 +284,6 @@ const lifecycleActionLabel = (current?: string): 'Activate' | 'Deactivate' | nul
 const canActivateUnderParent = (parentLifecycle?: string): boolean =>
   parentLifecycle === 'Active';
 
-// A cascade also writes Deactivated into the child's spec, so only a key that should be Active is held by its parent.
 const blockingParent = (key: { spec: { lifecycle?: string } }, parentActive: boolean, parentKind: string) =>
   key.spec.lifecycle !== 'Deactivated' && !parentActive ? parentKind : undefined;
 
@@ -368,7 +365,6 @@ const AccountHeader = ({
   dataEncryptionKeys: DataEncryptionKey[];
 }) => {
   const tenantReady = tenant ? conditionByType(tenant.status?.conditions, 'Ready') : undefined;
-  const activeRoots = rootKeys.filter((r) => keyLifecycle(r) === 'Active').length;
   const activeDomains = domainKeys.filter((d) => keyLifecycle(d) === 'Active').length;
   const activeServices = serviceKeys.filter((s) => keyLifecycle(s) === 'Active').length;
   const activeDeks = dataEncryptionKeys.filter((d) => keyLifecycle(d) === 'Active').length;
@@ -428,7 +424,7 @@ const AccountHeader = ({
           borderTop: '1px solid var(--sapGroup_ContentBorderColor)'
         }}
       >
-        <TierTile tier="L1" count={rootKeys.length} activeCount={activeRoots} />
+        <TierTile tier="L1" count={rootKeys.length} />
         <TierConnector />
         <TierTile tier="L2" count={domainKeys.length} activeCount={activeDomains} />
         <TierConnector />
@@ -439,203 +435,6 @@ const AccountHeader = ({
     </FlexBox>
   );
 };
-
-/* ------------------------------- Onboarding -------------------------------- */
-
-type StepState = 'pending' | 'next' | 'in-progress' | 'done';
-
-const stepAccent = (state: StepState) => {
-  if (state === 'done') return 'var(--sapPositiveColor)';
-  if (state === 'next') return 'var(--sapInformativeColor)';
-  if (state === 'in-progress') return 'var(--sapCriticalColor)';
-  return 'var(--sapNeutralColor)';
-};
-
-// The step number reads as a state: tinted ring when finished or running, action colour when it is next.
-const stepDot = (state: StepState): React.CSSProperties => {
-  if (state === 'done') return { background: 'var(--sapSuccessBackground)', border: '2px solid var(--sapPositiveElementColor)', color: 'var(--sapPositiveTextColor)' };
-  if (state === 'next') return { background: 'var(--sapButton_Emphasized_Background)', border: '2px solid var(--sapButton_Emphasized_Background)', color: 'var(--sapButton_Emphasized_TextColor)' };
-  if (state === 'in-progress') return { background: 'var(--sapWarningBackground)', border: '2px solid var(--sapCriticalElementColor)', color: 'var(--sapCriticalTextColor)' };
-  return { background: 'var(--sapGroup_ContentBackground)', border: '2px solid var(--sapNeutralBorderColor)', color: 'var(--sapContent_LabelColor)' };
-};
-
-const OnboardingStep = ({
-  n,
-  title,
-  description,
-  state,
-  actionLabel,
-  actionDisabled,
-  onAction,
-  pendingHint,
-  inProgressHint
-}: {
-  n: number;
-  title: string;
-  description: string;
-  state: StepState;
-  actionLabel?: string;
-  actionDisabled?: boolean;
-  onAction?: () => void;
-  pendingHint?: string;
-  inProgressHint?: string;
-}) => {
-  const accent = stepAccent(state);
-  const isDone = state === 'done';
-  const isNext = state === 'next';
-  const isInProgress = state === 'in-progress';
-  const isPending = state === 'pending';
-  return (
-    <FlexBox
-      direction={FlexBoxDirection.Column}
-      style={{
-        flex: '1 1 240px',
-        minWidth: 240,
-        padding: '1rem',
-        border: `1px solid ${isNext || isInProgress ? accent : 'var(--sapGroup_ContentBorderColor)'}`,
-        borderRadius: 'var(--sapElement_BorderCornerRadius)',
-        background: isNext
-          ? 'var(--sapInfobar_Background)'
-          : isInProgress
-          ? 'var(--sapWarningBackground)'
-          : 'transparent',
-        gap: '0.5rem'
-      }}
-    >
-      <FlexBox alignItems={FlexBoxAlignItems.Center} style={{ gap: '0.5rem' }}>
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '1.5rem',
-            height: '1.5rem',
-            borderRadius: '50%',
-            boxSizing: 'border-box',
-            fontWeight: 700,
-            fontSize: '0.75rem',
-            ...stepDot(state)
-          }}
-        >
-          {isDone ? <Icon name="accept" style={{ width: '0.85rem', height: '0.85rem' }} /> : n}
-        </span>
-        <Title level="H6" style={{ margin: 0 }}>
-          {title}
-        </Title>
-        {isInProgress && <StatusPill state="Critical">in progress</StatusPill>}
-        {isDone && <StatusPill state="Positive">done</StatusPill>}
-      </FlexBox>
-      <span style={{ fontSize: '0.8rem', color: 'var(--sapContent_LabelColor)' }}>
-        {description}
-      </span>
-      {isInProgress && inProgressHint && (
-        <span style={{ fontSize: '0.75rem', color: 'var(--sapCriticalTextColor)' }}>
-          {inProgressHint}
-        </span>
-      )}
-      {isPending && pendingHint && (
-        <span style={{ fontSize: '0.75rem', color: 'var(--sapContent_LabelColor)' }}>
-          {pendingHint}
-        </span>
-      )}
-      {actionLabel && <div style={{ marginTop: 'auto' }}>
-        <Button
-          design={isNext ? 'Emphasized' : 'Default'}
-          disabled={isPending || isDone || Boolean(actionDisabled)}
-          onClick={onAction}
-        >
-          {isDone
-            ? 'Done'
-            : isInProgress && !actionDisabled
-            ? `${actionLabel} (another)`
-            : actionLabel}
-        </Button>
-      </div>}
-    </FlexBox>
-  );
-};
-
-const OnboardingCard = ({
-  step1,
-  step2,
-  step3,
-  pendingRootKeyName,
-  pendingDomainKeyName,
-  pendingServiceKeyName,
-  canAddDomainKey,
-  canAddServiceKey,
-  onAddDomainKey,
-  onAddServiceKey
-}: {
-  step1: StepState;
-  step2: StepState;
-  step3: StepState;
-  pendingRootKeyName?: string;
-  pendingDomainKeyName?: string;
-  pendingServiceKeyName?: string;
-  canAddDomainKey: boolean;
-  canAddServiceKey: boolean;
-  onAddDomainKey: () => void;
-  onAddServiceKey: () => void;
-}) => (
-  <Card
-    header={
-      <CardHeader
-        avatar={<Icon name="hint" />}
-        titleText="Get started with OpenKCM"
-        subtitleText="Three steps from an empty tenant to a working key hierarchy."
-      />
-    }
-  >
-    <FlexBox style={{ padding: '0.75rem 1rem 1rem', gap: '0.75rem', flexWrap: 'wrap' }}>
-      <OnboardingStep
-        n={1}
-        title="Add a Root Key"
-        description={
-          'Connect a key from your own KMS (OpenBao, AWS KMS or Azure Key Vault). ' +
-          'It is the root of the hierarchy (L1).'
-        }
-        state={step1}
-        inProgressHint={
-          pendingRootKeyName
-            ? `Waiting for "${pendingRootKeyName}" to reach Active. ` +
-              'If the configuration is wrong, delete it and add a new one.'
-            : 'Waiting for the Root Key to become Active.'
-        }
-      />
-      <OnboardingStep
-        n={2}
-        title="Create a Domain Key"
-        description="One Namespace key shared by all services here, or an Instance key for a single service."
-        state={step2}
-        actionLabel="Create Domain Key"
-        actionDisabled={!canAddDomainKey}
-        onAction={onAddDomainKey}
-        pendingHint="Available once an L1 Root Key is Active."
-        inProgressHint={
-          pendingDomainKeyName
-            ? `Waiting for "${pendingDomainKeyName}" to reach Active.`
-            : 'Waiting for the Domain Key to become Active.'
-        }
-      />
-      <OnboardingStep
-        n={3}
-        title="Mint a Service Key"
-        description="A key for one workload, under an Active Domain Key. Data Keys (L4) are created under it."
-        state={step3}
-        actionLabel="Mint Service Key"
-        actionDisabled={!canAddServiceKey}
-        onAction={onAddServiceKey}
-        pendingHint="Available once an L2 Domain Key is Active."
-        inProgressHint={
-          pendingServiceKeyName
-            ? `Waiting for "${pendingServiceKeyName}" to reach Active.`
-            : 'Waiting for the Service Key to become Active.'
-        }
-      />
-    </FlexBox>
-  </Card>
-);
 
 /* ----------------------------------- Cards --------------------------------- */
 
@@ -759,7 +558,7 @@ const KeyHeader = ({
   name: string;
   subtitle?: string;
   namespaceLabel?: string;
-  lifecycle: string;
+  lifecycle?: string;
   actions: React.ReactNode;
 }) => (
   <div className="key-header">
@@ -769,9 +568,11 @@ const KeyHeader = ({
       {subtitle && <Truncate text={subtitle} className="muted" />}
       {namespaceLabel && <Truncate text={`Namespace: ${namespaceLabel}`} className="muted" />}
     </div>
-    <StatusPill className="key-status" state={lifecycleObjectState(lifecycle)}>
-      {lifecycle}
-    </StatusPill>
+    {lifecycle && (
+      <StatusPill className="key-status" state={lifecycleObjectState(lifecycle)}>
+        {lifecycle}
+      </StatusPill>
+    )}
     <div className="key-actions">{actions}</div>
   </div>
 );
@@ -1068,29 +869,27 @@ const ProviderIcon = ({
 /* ------------------------------- Root and domain keys ---------------------- */
 
 const RootKeyCard = ({
-  rk, busyAction, canManage, onLifecycleToggle, onDelete
+  rk, busyAction, canManage, onDelete
 }: {
   rk: RootKey;
   busyAction: BusyActionKind;
   canManage: boolean;
-  onLifecycleToggle: () => void;
   onDelete: () => void;
 }) => {
   const writeInFlight = busyAction !== null || isDeleting(rk);
-  const registered = Boolean(rk.status?.cryptoState);
+  const region = typeof rk.spec.region === 'string' && rk.spec.region ? rk.spec.region : undefined;
+  const keyUri = typeof rk.spec.keyUri === 'string' && rk.spec.keyUri ? rk.spec.keyUri : undefined;
   return (
     <KeyCard
       tier="L1"
       lead={<ProviderIcon kind={rk.kind} size="M" />}
       name={rk.metadata.name}
-      subtitle={providerVisual(rk.kind).label}
-      lifecycle={keyLifecycle(rk)}
+      subtitle={region ? `${providerVisual(rk.kind).label} · ${region}` : providerVisual(rk.kind).label}
+      lifecycle={isDeleting(rk) ? 'Deleting' : undefined}
       actions={
         <>
           <ActionSlot wide />
-          {canManage && registered && !writeInFlight
-            ? <LifecycleToggle lifecycle={keyLifecycle(rk)} busyAction={busyAction} onToggle={onLifecycleToggle} />
-            : <ActionSlot wide />}
+          <ActionSlot wide />
           <ActionSlot />
           {canManage
             ? (
@@ -1106,10 +905,11 @@ const RootKeyCard = ({
         </>
       }
     >
-      <ProblemStrip ready={conditionByType(rk.status?.conditions, 'Ready')} context={{ kind: 'Root Key' }} />
-      <div className="key-facts">
-        <Fact area="id" label="Key ID"><CopyableId id={rk.status?.cryptoState?.id} /></Fact>
-      </div>
+      {keyUri && (
+        <div className="key-facts">
+          <Fact area="id" label="Key ARN"><CopyableId id={keyUri} /></Fact>
+        </div>
+      )}
     </KeyCard>
   );
 };
@@ -1152,7 +952,6 @@ const DomainKeyCard = ({
           rk.metadata.name === primary.name
       )
     : undefined;
-  const rootActive = !primary || canActivateUnderParent(primaryRk && keyLifecycle(primaryRk));
 
   return (
     <KeyCard
@@ -1195,7 +994,7 @@ const DomainKeyCard = ({
     >
       <ProblemStrip
         ready={conditionByType(domainKey.status?.conditions, 'Ready')}
-        context={{ kind: 'Domain Key', inactiveParent: blockingParent(domainKey, rootActive, 'Root Key') }}
+        context={{ kind: 'Domain Key' }}
       />
       <div className="key-facts">
         <Fact area="id" label="Key ID">
@@ -1370,7 +1169,6 @@ const App = () => {
   useEffect(() => {
     setRkOpen(false);
     setConfirmDelete((target) => target?.kind === 'RootKey' ? null : target);
-    setConfirmDeactivate((target) => target?.kind === 'RootKey' ? null : target);
   }, [ctx, canManageL1]);
 
   const [accountClient, setAccountClient] = useState<KcpClientOptions>({
@@ -1511,54 +1309,7 @@ const App = () => {
       .sort((a, b) => a.kind.localeCompare(b.kind) || a.metadata.name.localeCompare(b.metadata.name)),
     [rootKeys]
   );
-  const activeRootKeys = useMemo(
-    () => visibleRootKeys.filter((rk) => keyLifecycle(rk) === 'Active'),
-    [visibleRootKeys]
-  );
-  const activeDomainKeys = useMemo(
-    () => domainKeys.filter((dk) => keyLifecycle(dk) === 'Active'),
-    [domainKeys]
-  );
   const mintable = useMemo(() => mintableDomainKeys(domainKeys, serviceKeys), [domainKeys, serviceKeys]);
-
-  const activeServiceKeys = useMemo(
-    () => serviceKeys.filter((sk) => keyLifecycle(sk) === 'Active'),
-    [serviceKeys]
-  );
-
-  const step1State: StepState =
-    activeRootKeys.length > 0 ? 'done' : visibleRootKeys.length > 0 ? 'in-progress' : 'next';
-  const step2State: StepState =
-    activeDomainKeys.length > 0
-      ? 'done'
-      : domainKeys.length > 0
-      ? 'in-progress'
-      : activeRootKeys.length > 0
-      ? 'next'
-      : 'pending';
-  const step3State: StepState =
-    activeServiceKeys.length > 0
-      ? 'done'
-      : serviceKeys.length > 0
-      ? 'in-progress'
-      : activeDomainKeys.length > 0
-      ? 'next'
-      : 'pending';
-
-  const pendingRootKey = useMemo(
-    () => visibleRootKeys.find((rk) => keyLifecycle(rk) !== 'Active'),
-    [visibleRootKeys]
-  );
-  const pendingDomainKey = useMemo(
-    () => domainKeys.find((dk) => keyLifecycle(dk) !== 'Active'),
-    [domainKeys]
-  );
-  const pendingServiceKey = useMemo(
-    () => serviceKeys.find((sk) => keyLifecycle(sk) !== 'Active'),
-    [serviceKeys]
-  );
-  const hasNamespaceKeyHierarchy =
-    domainKeys.length > 0 || serviceKeys.length > 0 || dataEncryptionKeys.length > 0;
 
   const rootKeyNamespace = useCallback(
     (rk: RootKey) => rk.metadata.namespace || accountNamespace,
@@ -1569,10 +1320,6 @@ const App = () => {
     [rootKeyNamespace]
   );
   const currentRoot = (root: RootKey) => rootKeys.find((key) => rootKeyListId(key) === rootKeyListId(root));
-  const canOperateRoot = (root: RootKey): boolean => {
-    const current = currentRoot(root);
-    return Boolean(canManageL1 && current && current.status?.cryptoState && !isDeleting(current));
-  };
   const canDeleteRoot = (root: RootKey): boolean => {
     const current = currentRoot(root);
     return Boolean(canManageL1 && current && !isDeleting(current) &&
@@ -1592,11 +1339,6 @@ const App = () => {
     (namespace: string) => domainKeys.filter((dk) => domainKeyNamespace(dk) === namespace),
     [domainKeyNamespace, domainKeys]
   );
-
-  const showOnboarding =
-    !loading &&
-    activeRootKeys.length > 0 &&
-    !hasNamespaceKeyHierarchy;
 
   /* --------------------------- Service key handlers ----------------------- */
 
@@ -1941,42 +1683,16 @@ const App = () => {
 
   /* ---------------------------- Lifecycle handlers ----------------------- */
 
-  // Dependents that would also be deactivated if we deactivate the target.
-  // Same computation as deleteDependents but driven off the deactivate target.
-  const deactivateDependents = useMemo<DependentWarning | null>(() => {
-    if (!confirmDeactivate) return null;
-    if (confirmDeactivate.kind === 'RootKey') return rootKeyDependents(confirmDeactivate.rootKey);
-    if (confirmDeactivate.kind === 'DomainKey') {
-      const refs = serviceKeys.filter(
-        (sk) =>
-          sk.spec.domainKeyRef === confirmDeactivate.name && parentNamespace(sk) === confirmDeactivate.namespace
-      );
-      return refs.length > 0 ? { kindLabel: 'Service Key', names: refs.map((s) => s.metadata.name) } : null;
-    }
-    if (confirmDeactivate.kind === 'ServiceKey') {
-      const refs = dataEncryptionKeys.filter((d) => d.spec.serviceKeyRef === confirmDeactivate.name && d.metadata.namespace === confirmDeactivate.namespace);
-      return refs.length > 0
-        ? { kindLabel: 'Data Key', names: refs.map((d) => d.metadata.name) }
-        : null;
-    }
-    return null;
-  }, [confirmDeactivate, dataEncryptionKeys, rootKeyDependents, serviceKeys]);
-
   const setLifecycleFor = async (
-    target: DeleteTarget,
+    target: DeactivateTarget,
     desired: DesiredLifecycle
   ): Promise<void> => {
-    if (target.kind === 'RootKey' && !canOperateRoot(target.rootKey)) return;
-    const targetName =
-      target.kind === 'RootKey' ? target.rootKey.metadata.name : target.name;
+    const targetName = target.name;
     const targetNamespace = targetNamespaceOf(target);
     if (!targetNamespace) return;
     setPendingAction({ target: target.kind, name: targetName, namespace: targetNamespace, kind: 'lifecycle' });
     try {
-      if (target.kind === 'RootKey') {
-        await setRootKeyLifecycle(accountClient, target.rootKey.kind, targetNamespace, targetName, desired);
-        if (accountClient.signal?.aborted) return;
-      } else if (target.kind === 'DomainKey') {
+      if (target.kind === 'DomainKey') {
         await setDomainKeyLifecycle(accountClient, targetNamespace, targetName, desired);
         if (accountClient.signal?.aborted) return;
       } else if (target.kind === 'ServiceKey') {
@@ -1997,8 +1713,7 @@ const App = () => {
     }
   };
 
-  const handleLifecycleToggle = async (target: DeleteTarget, currentState?: string) => {
-    if (target.kind === 'RootKey' && !canOperateRoot(target.rootKey)) return;
+  const handleLifecycleToggle = async (target: DeactivateTarget, currentState?: string) => {
     const next = lifecycleActionLabel(currentState);
     if (next === 'Activate') {
       await setLifecycleFor(target, 'Active');
@@ -2054,7 +1769,7 @@ const App = () => {
       ? pendingAction.kind
       : null;
 
-  const dkRootKeyOptions = activeRootKeys;
+  const dkRootKeyOptions = visibleRootKeys;
 
   const dkNamespaceKey = namespaceDomainKey(domainKeysIn(dkNamespace));
 
@@ -2161,21 +1876,6 @@ const App = () => {
             </FlexBox>
           )}
 
-          {showOnboarding && (
-            <OnboardingCard
-              step1={step1State}
-              step2={step2State}
-              step3={step3State}
-              pendingRootKeyName={pendingRootKey?.metadata.name}
-              pendingDomainKeyName={pendingDomainKey?.metadata.name}
-              pendingServiceKeyName={pendingServiceKey?.metadata.name}
-              canAddDomainKey={canCreateDk}
-              canAddServiceKey={canCreateSk}
-              onAddDomainKey={() => openDkDialog()}
-              onAddServiceKey={openSkDialog}
-            />
-          )}
-
           {!loading && (
             <section className="keys-box" aria-label="Keys">
               <div className="keys-box-header">
@@ -2211,9 +1911,6 @@ const App = () => {
                         rk={rk}
                         canManage={canManageL1}
                         busyAction={busyActionFor('RootKey', rk.metadata.name)}
-                        onLifecycleToggle={() =>
-                          handleLifecycleToggle({ kind: 'RootKey', rootKey: rk }, keyLifecycle(rk))
-                        }
                         onDelete={() => setConfirmDelete({ kind: 'RootKey', rootKey: rk })}
                       />
                     ))}
@@ -2747,7 +2444,7 @@ const App = () => {
 
       {/* Confirm deactivate dialog */}
       <Dialog
-        open={Boolean(confirmDeactivate) && (confirmDeactivate?.kind !== 'RootKey' || canOperateRoot(confirmDeactivate.rootKey))}
+        open={Boolean(confirmDeactivate)}
         headerText={`Deactivate ${confirmDeactivate ? deleteKindLabel(confirmDeactivate.kind) : ''}`}
         onClose={() => setConfirmDeactivate(null)}
         footer={
@@ -2774,47 +2471,16 @@ const App = () => {
           direction={FlexBoxDirection.Column}
           style={{ gap: '0.75rem', width: CONFIRM_DIALOG_WIDTH, padding: '0.5rem 0' }}
         >
-          {deactivateDependents ? (
-            <MessageStrip design="Negative" hideCloseButton>
-              {deactivateDependents.unknown ? (
-                <>
-                  Deactivating this Root Key may cascade to Domain Keys and lower-level keys in namespaces.
-                </>
-              ) : (
-                <>
-                  Deactivating this key will cascade to {deactivateDependents.names.length}{' '}
-                  {deactivateDependents.names.length === 1
-                    ? deactivateDependents.kindLabel
-                    : `${deactivateDependents.kindLabel}s`}
-                  . They will all be moved to Deactivated.
-                </>
-              )}
-            </MessageStrip>
-          ) : (
-            <MessageStrip design="Critical" hideCloseButton>
-              Deactivating turns the key off. You can re-activate it later.
-              No downstream resources currently depend on this key.
-            </MessageStrip>
-          )}
+          <MessageStrip design="Critical" hideCloseButton>
+            Deactivating turns only this key off. Keys under it are not changed. You can re-activate it later.
+          </MessageStrip>
           <div>
             Deactivate{' '}
             <strong>
-              {confirmDeactivate?.kind === 'RootKey'
-                ? confirmDeactivate.rootKey.metadata.name
-                : confirmDeactivate?.name ?? ''}
+              {confirmDeactivate?.name ?? ''}
             </strong>
             ?
           </div>
-          {deactivateDependents && !deactivateDependents.unknown && (
-            <FlexBox direction={FlexBoxDirection.Column} style={{ gap: 2 }}>
-              <Label>Will also be deactivated:</Label>
-              <FlexBox style={{ gap: 4, flexWrap: 'wrap' }}>
-                {deactivateDependents.names.map((n) => (
-                  <Chip key={n} text={n} kind={deactivateDependents.kindLabel} />
-                ))}
-              </FlexBox>
-            </FlexBox>
-          )}
         </FlexBox>
       </Dialog>
 

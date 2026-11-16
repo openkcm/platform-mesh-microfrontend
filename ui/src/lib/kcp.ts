@@ -916,25 +916,9 @@ const sendLifecyclePatch = async (
   await graphqlFetch(opts, { query, variables: { ns: namespace, name, object } });
 };
 
-const UPDATE_OPENBAO_MUTATION = updateLifecycleMutation('OpenBaoRootKey', 'updateOpenBaoRootKey');
-const UPDATE_AWS_MUTATION = updateLifecycleMutation('AWSRootKey', 'updateAWSRootKey');
-const UPDATE_AZURE_MUTATION = updateLifecycleMutation('AzureRootKey', 'updateAzureRootKey');
 const UPDATE_DOMAINKEY_MUTATION = updateLifecycleMutation('DomainKey', 'updateDomainKey');
 const UPDATE_SERVICEKEY_MUTATION = updateLifecycleMutation('ServiceKey', 'updateServiceKey');
 const UPDATE_DEK_MUTATION = updateLifecycleMutation('DataEncryptionKey', 'updateDataEncryptionKey');
-
-export const setRootKeyLifecycle = (
-  opts: KcpClientOptions,
-  kind: RootKey['kind'],
-  namespace: string,
-  name: string,
-  lifecycle: DesiredLifecycle
-): Promise<void> => {
-  if (kind === 'OpenBaoRootKey') return sendLifecyclePatch(opts, UPDATE_OPENBAO_MUTATION, namespace, name, lifecycle);
-  if (kind === 'AWSRootKey') return sendLifecyclePatch(opts, UPDATE_AWS_MUTATION, namespace, name, lifecycle);
-  if (kind === 'AzureRootKey') return sendLifecyclePatch(opts, UPDATE_AZURE_MUTATION, namespace, name, lifecycle);
-  return Promise.reject(new Error(`lifecycle not supported for ${kind} (stub kind)`));
-};
 
 export const setDomainKeyLifecycle = (
   opts: KcpClientOptions,
