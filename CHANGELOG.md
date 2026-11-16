@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.0 (2026-11-16)
+
+## What's Changed
+* feat: add AWS root keys with an access key kept in an owned Secret by @ykld-work in https://github.com/openkcm/platform-mesh-microfrontend/pull/37
+* feat: show root keys as customer data and drop the cascade and onboarding UI by @ykld-work in https://github.com/openkcm/platform-mesh-microfrontend/pull/39
+
+
+**Full Changelog**: https://github.com/openkcm/platform-mesh-microfrontend/compare/v0.14.0...v0.15.0
+
 ## 0.14.0 (2026-11-13)
 
 ## What's Changed
