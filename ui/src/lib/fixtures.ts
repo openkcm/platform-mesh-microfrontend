@@ -10,6 +10,8 @@ export const fixturesEnabled = (): boolean => {
   return env.VITE_FIXTURES === 'true';
 };
 
+export const fixtureNamespaces = (): string[] => ['default', 'team-a', 'team-b'];
+
 export const fixtureTenants = (): Tenant[] => [
   {
     metadata: { name: 'ig-9', creationTimestamp: new Date(Date.now() - 36 * 3600_000).toISOString() },

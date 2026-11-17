@@ -18,3 +18,7 @@ createRoot(container).render(
     <App />
   </ThemeProvider>
 );
+
+if ((import.meta as any).env.DEV && (import.meta as any).env.VITE_DEV_PORTAL_BAR === 'true') {
+  void import('./dev/DevPortalBar').then(({ mountDevPortalBar }) => mountDevPortalBar());
+}

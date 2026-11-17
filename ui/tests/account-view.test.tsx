@@ -8,13 +8,16 @@ const api = vi.hoisted(() => ({
   context: undefined as undefined | ((context: RuntimeContext) => void),
   rootEvent: undefined as undefined | (() => void),
   createRoot: vi.fn(), removeRoot: vi.fn(),
-  services: vi.fn(), all: vi.fn(), list: vi.fn(), roots: vi.fn(), tenants: vi.fn(), remove: vi.fn(), createDomain: vi.fn(), createService: vi.fn(), createData: vi.fn(), navigate: vi.fn(), stop: vi.fn(), linkRoot: vi.fn(), unlinkRoot: vi.fn()
+  services: vi.fn(), all: vi.fn(), list: vi.fn(), roots: vi.fn(), tenants: vi.fn(), remove: vi.fn(),
+  createDomain: vi.fn(), createService: vi.fn(), createData: vi.fn(), navigate: vi.fn(), back: vi.fn(), stop: vi.fn(),
+  linkRoot: vi.fn(), unlinkRoot: vi.fn()
 }));
 vi.mock('../src/lib/luigi', async (original) => ({
   ...await original<typeof import('../src/lib/luigi')>(),
   emptyRuntimeContext: () => api.initialContext ?? {source:'pending',graphqlUrl:null,token:null,workspacePath:null,namespace:null,accountNamespace:'default',viewLevel:'account'},
   subscribeToLuigi: (listener: typeof api.context) => { api.context = listener; return () => {}; },
-  navigateToDomainKey: api.navigate
+  navigateToDomainKey: api.navigate,
+  navigateToKeys: api.back
 }));
 vi.mock('../src/lib/kcp', async (original) => ({
   ...await original<typeof import('../src/lib/kcp')>(),
@@ -68,7 +71,10 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ok:true,json:async()=>[{resource:'l1keyaccesses',name:'account-l1',actions:['manage_l1']}]}));
   api.createRoot.mockReset(); api.removeRoot.mockReset();
   vi.clearAllMocks(); api.initialContext = null; api.all.mockResolvedValue(snapshot([])); api.list.mockResolvedValue(snapshot([]));
-  api.services.mockResolvedValue(snapshot([])); api.roots.mockResolvedValue([]); api.tenants.mockResolvedValue([]); api.remove.mockResolvedValue(undefined); api.createDomain.mockResolvedValue(undefined); api.createService.mockResolvedValue(undefined); api.createData.mockResolvedValue(undefined); api.navigate.mockResolvedValue(undefined);
+  api.services.mockResolvedValue(snapshot([])); api.roots.mockResolvedValue([]); api.tenants.mockResolvedValue([]);
+  api.remove.mockResolvedValue(undefined); api.createDomain.mockResolvedValue(undefined);
+  api.createService.mockResolvedValue(undefined); api.createData.mockResolvedValue(undefined);
+  api.navigate.mockResolvedValue(undefined); api.back.mockResolvedValue(undefined);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -81,12 +87,10 @@ it('lists all namespaces and keeps native namespace filters', async () => {
   expect(screen.getAllByText('Create Domain Key').every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
 });
 
-it('uses the row namespace for detail and delete with equal names across namespaces', async () => {
+it('uses the row namespace for delete with equal names across namespaces', async () => {
   api.all.mockResolvedValue(snapshot([key('team-a'),key('team-b')]));
   render(<App/>); change(context('a'));
   await screen.findByText('Namespace: team-b');
-  fireEvent.click(screen.getAllByText('Details')[1]);
-  expect(api.navigate).toHaveBeenCalledWith('equal-name','team-b',expect.any(AbortSignal));
   fireEvent.click(screen.getAllByLabelText('Delete Domain Key')[1]);
   fireEvent.click(screen.getByText('Delete', {selector:'button'}));
   await waitFor(() => expect(api.remove).toHaveBeenCalledWith(expect.objectContaining({workspacePath:'root:orgs:showroom:a'}),'team-b','equal-name'));
@@ -197,6 +201,21 @@ it('does not repeat the selected namespace on Domain Key cards', async () => {
   await screen.findByText('team-key', {selector: '.key-name'});
   expect(document.querySelector('.namespace-group')).toBeNull();
   expect(screen.queryByText(/^Namespace:/)).toBeNull();
+});
+
+it('keeps the actions of a System key outside all namespaces, disabled with the reason', async () => {
+  listByNamespace({'default': [systemKey('shared')], 'team-a': [key('team-a', 'team-key')]});
+  render(<App/>); change(context('a', 'team-a'));
+  const card = (await screen.findByText('shared', {selector: '.key-name'})).closest('.key-card-content') as HTMLElement;
+  expect(within(card).getByText('Scope: System · Managed in all namespaces')).toBeTruthy();
+  const actions =
+    within(card).getAllByLabelText('To change a System key, select all namespaces.') as HTMLButtonElement[];
+  expect(actions).toHaveLength(3);
+  expect(actions.every((button) => button.disabled)).toBe(true);
+  expect(within(card).getByText('Deactivate', {selector: 'button'})).toBe(actions[0]);
+  const own =
+    (await screen.findByText('team-key', {selector: '.key-name'})).closest('.key-card-content') as HTMLElement;
+  expect((within(own).getByLabelText('Delete Domain Key') as HTMLButtonElement).disabled).toBe(false);
 });
 
 it('does not name the account namespace on a Service Key', async () => {
@@ -552,7 +571,8 @@ const fillRootKeyDialog = (name: string) => {
 const dialogButton = (label: string) =>
   within(screen.getByRole('dialog')).getByText(label,{selector:'button'}) as HTMLButtonElement;
 
-it.each(['deny','pending','failure','malformed'])('hides L1 actions for %s and preserves lower-tier actions', async (mode) => {
+it.each(['deny','pending','failure','malformed'])(
+  'disables L1 actions for %s and preserves lower-tier actions', async (mode) => {
   api.roots.mockResolvedValue([rootFixture]);
   vi.mocked(fetch).mockImplementation(async () => {
     if(mode==='pending') return new Promise(()=>{});
@@ -563,6 +583,8 @@ it.each(['deny','pending','failure','malformed'])('hides L1 actions for %s and p
   await rootCard('aws-eu');
   expect(screen.queryByText('Add Root Key')).toBeNull();
   expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
+  const rootDelete = screen.getByLabelText('Only L1 Key Managers can delete Root Keys.') as HTMLButtonElement;
+  expect(rootDelete.disabled).toBe(true);
   expect(screen.queryByText('Deactivate',{selector:'button'})).toBeNull();
   expect(screen.getAllByText('Create Domain Key').every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
 });
@@ -717,7 +739,7 @@ it('shows a root key as the customer data only, without status or lifecycle acti
   const card = (await rootCard('aws-eu')).closest('.key-card-content') as HTMLElement;
   expect(within(card).getByText('AWS · eu-central-1')).toBeTruthy();
   expect(within(card).getByText('Key ARN')).toBeTruthy();
-  expect(within(card).getByText(arn)).toBeTruthy();
+  expect(within(card).getByText('arn:aws:…ey/abc').getAttribute('title')).toBe(arn);
   expect(card.querySelector('.status-pill')).toBeNull();
   expect(within(card).queryByText(/could not be created/)).toBeNull();
   expect(within(card).queryByText('Deactivate',{selector:'button'})).toBeNull();
@@ -891,4 +913,108 @@ it('draws tiers as tinted chips and states as soft pills, with no coloured card 
   ]);
   expect(container.querySelector('.key-card-accent')).toBeNull();
   expect(container.querySelector('.section-header .tier-badge.tier-l1')?.textContent).toBe('L1');
+});
+
+const sharedChild = (name: string, namespace: string, id?: string) => ({
+  metadata: {name, namespace},
+  spec: {domainKeyRef: 'shared', domainKeyNamespace: 'default', lifecycle: 'Active'},
+  status: {cryptoState: {lifecycleState: 'Active', ...(id ? {id} : {})}}
+});
+const detailsOf = (namespace: string, name: string, filter: string | null = null): RuntimeContext =>
+  ({...context('a', filter), openkcmPage: 'domain-key', domainKey: {namespace, name}});
+
+it('gives every Domain Key card the same View details link and nothing else in its place', async () => {
+  api.all.mockResolvedValue(snapshot([systemKey('shared'), key('team-a', 'team-key')]));
+  api.services.mockResolvedValue(snapshot([
+    sharedChild('sk-a', 'team-a'),
+    {metadata: {name: 'served', namespace: 'team-a'}, spec: {domainKeyRef: 'team-key', lifecycle: 'Active'}}
+  ]));
+  render(<App/>); change(context('a'));
+  const card = (name: string) =>
+    screen.findByText(name, {selector: '.key-name'}).then((el) => el.closest('.key-card-content') as HTMLElement);
+  for (const name of ['shared', 'team-key']) {
+    const facts = (await card(name)).querySelector('.key-facts') as HTMLElement;
+    expect([...facts.children].map((child) => child.textContent))
+      .toEqual([expect.stringContaining('Key ID'), expect.stringContaining('Parent Root Key'), 'View details']);
+  }
+  fireEvent.click(within(await card('shared')).getByText('View details'));
+  expect(api.navigate).toHaveBeenCalledWith('shared', 'default', expect.any(AbortSignal));
+});
+
+it('shows the details page with the Root Key and every Service Key across namespaces, read-only', async () => {
+  const shared = systemKey('shared');
+  const primaryRootKeyRef = {apiGroup: 'operations.openkcm.io', kind: 'AWSRootKey', name: 'aws'};
+  api.all.mockResolvedValue(snapshot([{...shared, spec: {...shared.spec, primaryRootKeyRef}}]));
+  api.roots.mockResolvedValue([activeRoot]);
+  api.services.mockResolvedValue(snapshot([
+    sharedChild('sk-b', 'team-b', 'id-b'),
+    sharedChild('sk-a', 'team-a', 'id-a'),
+    sharedChild('sk-0', 'default', '5f3c2a1b-8d4e-4c1a-9b2f-3a6d8c07e9a2'),
+    {metadata: {name: 'other', namespace: 'team-a'}, spec: {domainKeyRef: 'shared', lifecycle: 'Active'}}
+  ]));
+  render(<App/>); change(detailsOf('default', 'shared', 'team-a'));
+  await screen.findByText('shared', {selector: '.detail-name'});
+  expect(screen.getByText('Domain Key · Scope: System')).toBeTruthy();
+  const summary = document.querySelector('.detail-list') as HTMLElement;
+  expect([...summary.querySelectorAll('dt')].map((dt) => dt.textContent))
+    .toEqual(['Parent Root Key', 'Key ID', 'Version', 'Last rotated', 'Created']);
+  expect(within(summary).getByText('aws')).toBeTruthy();
+  expect(api.all).toHaveBeenCalled();
+  expect(api.list).not.toHaveBeenCalled();
+  const rows = [...document.querySelectorAll('.detail-table tbody tr')]
+    .map((row) => [...row.querySelectorAll('td')].slice(0, 2).map((cell) => cell.textContent));
+  expect(rows).toEqual([['sk-0', 'Account'], ['sk-a', 'team-a'], ['sk-b', 'team-b']]);
+  expect(screen.getByText('id-a')).toBeTruthy();
+  expect(screen.getByText('5f3c2a1b…07e9a2').getAttribute('title')).toBe('5f3c2a1b-8d4e-4c1a-9b2f-3a6d8c07e9a2');
+  expect(document.querySelector('.key-card')).toBeNull();
+  expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
+  expect(screen.queryByText('Deactivate', {selector: 'button'})).toBeNull();
+  expect(screen.queryByLabelText('Edit Domain Key')).toBeNull();
+  fireEvent.click(screen.getByText('Back to Keys'));
+  expect(api.back).toHaveBeenCalledWith(expect.any(AbortSignal));
+});
+
+it('filters a long Service Key list on the details page', async () => {
+  api.all.mockResolvedValue(snapshot([systemKey('shared')]));
+  api.services.mockResolvedValue(
+    snapshot(['a', 'b', 'c', 'd', 'e', 'f'].map((n) => sharedChild(`sk-${n}`, `team-${n}`)))
+  );
+  render(<App/>); change(detailsOf('default', 'shared'));
+  await screen.findByText('sk-a');
+  fireEvent.change(screen.getByRole('textbox'), {target: {value: 'team-c'}});
+  const names = () =>
+    [...document.querySelectorAll('.detail-table tbody tr')].map((row) => row.querySelector('td')?.textContent);
+  expect(names()).toEqual(['sk-c']);
+  fireEvent.change(screen.getByRole('textbox'), {target: {value: 'nothing'}});
+  expect(screen.getByText('No Service Keys match "nothing".')).toBeTruthy();
+});
+
+it('says when the Domain Key of a details page no longer exists', async () => {
+  render(<App/>); change(detailsOf('team-a', 'gone'));
+  await screen.findByText('Domain Key gone was not found. It may have been deleted.');
+  expect(screen.getByText('Back to Keys')).toBeTruthy();
+});
+
+it('opens the full configuration of a root key from its card and closes it again', async () => {
+  const accessKey = {
+    roleArn: 'arn:aws:iam::000000000000:role/r',
+    secretRef: {name: 'awsrootkey-aws-eu', namespace: 'default'}
+  };
+  api.roots.mockResolvedValue([{...rootFixture, spec: {
+    ...rootFixture.spec,
+    region: 'eu-central-1',
+    keyUri: 'arn:aws:kms:eu-central-1:000000000000:key/abc',
+    auth: {method: 'AccessKey', accessKey}
+  }}]);
+  render(<App/>); change(context('a'));
+  const card = (await rootCard('aws-eu')).closest('.key-card-content') as HTMLElement;
+  fireEvent.click(within(card).getByText('View details'));
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).getByText('Root Key details: aws-eu')).toBeTruthy();
+  expect([...dialog.querySelectorAll('.detail-group-title')].map((title) => title.textContent))
+    .toEqual(['General', 'KMS', 'Access key']);
+  expect(within(dialog).getByText('arn:aws:kms:eu-central-1:000000000000:key/abc')).toBeTruthy();
+  expect(within(dialog).getByText('Stored in Secret awsrootkey-aws-eu')).toBeTruthy();
+  fireEvent.click(within(dialog).getByText('Close'));
+  expect(screen.queryByRole('dialog')).toBeNull();
 });

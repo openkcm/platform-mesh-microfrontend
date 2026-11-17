@@ -11,6 +11,7 @@ import { createClient } from 'graphql-sse';
 import {
   fixtureDataEncryptionKeys,
   fixtureDomainKeys,
+  fixtureNamespaces,
   fixtureRootKeys,
   fixtureServiceKeys,
   fixtureTenants,
@@ -91,6 +92,26 @@ const graphqlFetch = async <T>(
     throw new Error('GraphQL response missing data');
   }
   return envelope.data;
+};
+
+const NAMESPACES_QUERY = `
+  query Namespaces {
+    v1 {
+      Namespaces {
+        items { metadata { name } }
+      }
+    }
+  }
+`;
+
+interface NamespaceListResponse {
+  v1: { Namespaces: { items: Array<{ metadata: { name: string } }> } };
+}
+
+export const listNamespaces = async (opts: KcpClientOptions): Promise<string[]> => {
+  if (fixturesEnabled()) return fixtureNamespaces();
+  const data = await graphqlFetch<NamespaceListResponse>(opts, { query: NAMESPACES_QUERY });
+  return (data.v1?.Namespaces?.items ?? []).map((item) => item.metadata.name).sort();
 };
 
 /* ------------------------------- Tenant ------------------------------------- */

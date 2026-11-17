@@ -38,10 +38,12 @@ export const instanceDomainKeys = (domainKeys: DomainKey[]): DomainKey[] =>
 export const parentNamespace = (sk: ServiceKey): string | undefined =>
   sk.spec.domainKeyNamespace || sk.metadata.namespace;
 
+export const serviceKeysOn = (dk: DomainKey, serviceKeys: ServiceKey[]): ServiceKey[] =>
+  serviceKeys.filter((sk) =>
+    sk.spec.domainKeyRef === dk.metadata.name && parentNamespace(sk) === dk.metadata.namespace);
+
 export const serviceKeyOn = (dk: DomainKey, serviceKeys: ServiceKey[]): ServiceKey | undefined =>
-  serviceKeys
-    .filter((sk) => sk.spec.domainKeyRef === dk.metadata.name && parentNamespace(sk) === dk.metadata.namespace)
-    .sort(servesFirst)[0];
+  serviceKeysOn(dk, serviceKeys).sort(servesFirst)[0];
 
 export const mintableDomainKeys = (domainKeys: DomainKey[], serviceKeys: ServiceKey[]): DomainKey[] => {
   const namespaces = [...new Set(domainKeys.map((dk) => dk.metadata.namespace))];

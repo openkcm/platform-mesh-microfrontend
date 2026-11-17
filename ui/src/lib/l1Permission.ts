@@ -22,8 +22,14 @@ export const allowsL1 = (value: unknown, action: MarkerAction = 'manage_l1'): bo
   );
 };
 
+// Only for npm run dev: the dev mock has no portal to ask, and the gateway still checks every call.
+export const devMockGrant = (
+  ctx: RuntimeContext,
+  env: { DEV?: unknown; VITE_LUIGI_MOCK_L1?: unknown } = (import.meta as any).env ?? {}
+): boolean => Boolean(env.DEV) && env.VITE_LUIGI_MOCK_L1 === 'true' && ctx.source === 'mock';
+
 export const checkL1Permission = async (ctx: RuntimeContext, signal: AbortSignal, action: MarkerAction = 'manage_l1'): Promise<boolean> => {
-  if (fixturesEnabled()) return true;
+  if (fixturesEnabled() || devMockGrant(ctx)) return true;
   const path = ctx.workspacePath?.match(/^root:orgs:([^:]+):(.+)$/);
   if (!path || !ctx.token || !ctx.graphqlUrl || ctx.source !== 'luigi') return false;
   const response = await fetch(new URL('/rest/permissions/resource-check', ctx.graphqlUrl), {
