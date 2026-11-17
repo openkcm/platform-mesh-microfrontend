@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.0 (2026-11-17)
+
+## What's Changed
+* feat: line up the key cards and add Domain Key and Root Key details by @ykld-work in https://github.com/openkcm/platform-mesh-microfrontend/pull/40
+
+
+**Full Changelog**: https://github.com/openkcm/platform-mesh-microfrontend/compare/v0.15.0...v0.16.0
+
 ## 0.15.0 (2026-11-16)
 
 ## What's Changed
