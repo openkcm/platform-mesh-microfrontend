@@ -9,7 +9,8 @@ export type OpenKCMViewLevel = 'account' | 'namespace';
 export interface RuntimeContext {
   source: ConfigSource;
   iamServiceApiUrl?: string | null;
-  openkcmPage?: 'keys' | 'l1-key-managers';
+  openkcmPage?: 'keys' | 'l1-key-managers' | 'domain-key';
+  domainKey?: { namespace: string; name: string } | null;
   graphqlUrl: string | null;
   token: string | null;
   workspacePath: string | null;
@@ -95,6 +96,15 @@ const resolveNamespace = (context: any, search?: Record<string, string>): string
   return value === '-all-' ? null : normaliseString(value);
 };
 
+const resolvePage = (context: any): RuntimeContext['openkcmPage'] =>
+  context?.openkcmPage === 'l1-key-managers' || context?.openkcmPage === 'domain-key' ? context.openkcmPage : 'keys';
+
+const resolveDomainKey = (context: any): RuntimeContext['domainKey'] => {
+  const namespace = normaliseString(context?.domainKeyNamespace);
+  const name = normaliseString(context?.domainKeyName);
+  return namespace && name ? { namespace, name } : null;
+};
+
 const resolveAccountNamespace = (context: any): string =>
   normaliseString(context?.accountNamespace ?? context?.portalContext?.accountNamespace) ?? 'default';
 
@@ -128,7 +138,8 @@ export const extractRuntimeContext = (context: any, source: ConfigSource, search
     source,
     graphqlUrl,
     iamServiceApiUrl: normaliseString(context?.portalContext?.iamServiceApiUrl) ? absolutizeAgainstPortal(context.portalContext.iamServiceApiUrl) : null,
-    openkcmPage: context?.openkcmPage === 'l1-key-managers' ? 'l1-key-managers' : 'keys',
+    openkcmPage: resolvePage(context),
+    domainKey: resolveDomainKey(context),
     token: normaliseString(context?.token ?? context?.portalContext?.token),
     workspacePath: resolveWorkspacePath(context, graphqlUrl),
     namespace,
@@ -147,14 +158,25 @@ export const emptyRuntimeContext = (): RuntimeContext => ({
   viewLevel: 'account'
 });
 
+interface LinkManagerLike {
+  navigate: (path: string) => void;
+  getCurrentRoute: () => Promise<string>;
+}
+
 interface LuigiClientLike {
+  linkManager?: () => LinkManagerLike;
   addInitListener: (cb: (context: any) => void) => string | number;
   removeInitListener?: (id: string | number) => void;
   addContextUpdateListener: (cb: (context: any) => void) => string | number;
   removeContextUpdateListener?: (id: string | number) => void;
   getCoreSearchParams?: () => Record<string, string>;
   __isMock?: boolean;
+  __setNamespace?: (namespace: string) => void;
 }
+
+const OPENKCM_ROOT = '/openkcm';
+const DOMAIN_KEY_ROUTE = /^(.*\/openkcm)\/domain-keys\/([^/]+)\/([^/]+)\/?$/;
+const OPENKCM_ROUTE = /^(.*\/openkcm)(?:\/domain-keys\/[^/]+\/[^/]+)?\/?$/;
 
 const installDevMock = () => {
   if (typeof window === 'undefined') return;
@@ -165,18 +187,24 @@ const installDevMock = () => {
   if (globalAny.LuigiClient) return;
 
   const mockWorkspace = env.VITE_LUIGI_MOCK_WORKSPACE || 'root:orgs:showroom:ig-9';
-  const mockNamespace = env.VITE_LUIGI_MOCK_NAMESPACE || 'default';
+  const urlNamespace = new URLSearchParams(window.location.search).get('namespace');
+  let mockNamespace: string = urlNamespace || env.VITE_LUIGI_MOCK_NAMESPACE || 'default';
   const mockLevel = env.VITE_LUIGI_MOCK_LEVEL || 'namespace';
   const mockGraphql = env.VITE_LUIGI_MOCK_GRAPHQL_URL || '/graphql';
   const mockToken = env.VITE_LUIGI_MOCK_TOKEN ?? null;
+  let mockRoute = window.location.hash.replace(/^#/, '') || OPENKCM_ROOT;
 
   const context = {
     token: mockToken,
     kcpPath: mockWorkspace,
     workspacePath: mockWorkspace,
     namespace: mockNamespace,
+    namespaceId: mockNamespace,
     accountNamespace: 'default',
     openkcmLevel: mockLevel,
+    openkcmPage: undefined as string | undefined,
+    domainKeyNamespace: undefined as string | undefined,
+    domainKeyName: undefined as string | undefined,
     portalContext: {
       graphqlUrl: mockGraphql,
       kcpPath: mockWorkspace,
@@ -187,17 +215,58 @@ const installDevMock = () => {
     }
   };
 
+  const updateListeners = new Map<string, (context: any) => void>();
+  let nextListenerId = 0;
+  const notify = () => updateListeners.forEach((cb) => cb(context));
+  const applyRoute = (route: string) => {
+    const match = route.match(DOMAIN_KEY_ROUTE);
+    mockRoute = route;
+    context.openkcmPage = match ? 'domain-key' : undefined;
+    context.domainKeyNamespace = match ? decodeURIComponent(match[2]) : undefined;
+    context.domainKeyName = match ? decodeURIComponent(match[3]) : undefined;
+  };
+  applyRoute(mockRoute);
+  window.addEventListener('popstate', () => {
+    applyRoute(window.location.hash.replace(/^#/, '') || OPENKCM_ROOT);
+    notify();
+  });
+
   const client: LuigiClientLike = {
     __isMock: true,
+    linkManager: () => ({
+      getCurrentRoute: async () => `${mockRoute}?namespace=${encodeURIComponent(mockNamespace)}`,
+      navigate(path) {
+        const route = new URL(path, window.location.origin).pathname;
+        applyRoute(route);
+        const { pathname, search } = window.location;
+        window.history.pushState(window.history.state, '', `${pathname}${search}#${route}`);
+        notify();
+      }
+    }),
     addInitListener(cb) {
       queueMicrotask(() => cb(context));
       return 'mock-init';
     },
     removeInitListener() {},
-    addContextUpdateListener() {
-      return 'mock-update';
+    addContextUpdateListener(cb) {
+      const id = `mock-update-${nextListenerId++}`;
+      updateListeners.set(id, cb);
+      return id;
     },
-    removeContextUpdateListener() {}
+    removeContextUpdateListener(id) {
+      updateListeners.delete(String(id));
+    },
+    getCoreSearchParams: () => ({ namespace: mockNamespace }),
+    __setNamespace(namespace) {
+      mockNamespace = namespace;
+      context.namespace = namespace;
+      context.namespaceId = namespace;
+      context.portalContext.namespace = namespace;
+      const url = new URL(window.location.href);
+      url.searchParams.set('namespace', namespace);
+      window.history.replaceState(window.history.state, '', url);
+      notify();
+    }
   };
 
   globalAny.LuigiClient = client;
@@ -254,15 +323,21 @@ export const subscribeToLuigi = (
   };
 };
 
-export const navigateToDomainKey = async (name: string, namespace: string, signal?: AbortSignal): Promise<void> => {
+const navigateWithinOpenKCM = async (suffix: string, signal?: AbortSignal): Promise<void> => {
   signal?.throwIfAborted();
-  const client = await import('@luigi-project/client');
+  const globalAny = typeof window !== 'undefined' ? (window as any) : undefined;
+  const client: { linkManager: () => LinkManagerLike } = globalAny?.LuigiClient?.linkManager
+    ? globalAny.LuigiClient
+    : await import('@luigi-project/client');
   const route = await client.linkManager().getCurrentRoute();
   signal?.throwIfAborted();
   const url = new URL(route, window.location.origin);
-  const segment = '/openkcm/domain-keys';
-  const index = url.pathname.lastIndexOf('/openkcm');
-  if (index < 0) throw new Error('The portal provider route is unavailable.');
-  url.pathname = url.pathname.slice(0, index) + segment + `/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`;
-  client.linkManager().navigate(`${url.pathname}${url.search}`);
+  const base = url.pathname.match(OPENKCM_ROUTE)?.[1];
+  if (!base) throw new Error('The portal provider route is unavailable.');
+  client.linkManager().navigate(`${base}${suffix}${url.search}`);
 };
+
+export const navigateToDomainKey = (name: string, namespace: string, signal?: AbortSignal): Promise<void> =>
+  navigateWithinOpenKCM(`/domain-keys/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, signal);
+
+export const navigateToKeys = (signal?: AbortSignal): Promise<void> => navigateWithinOpenKCM('', signal);

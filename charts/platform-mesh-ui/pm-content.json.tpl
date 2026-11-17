@@ -64,14 +64,11 @@
                     {
                       "pathSegment": ":resourceName",
                       "hideFromNav": true,
-                      "url": "/assets/platform-mesh-portal-ui-wc.js#generic-detail-view",
-                      "webcomponent": {
-                        "selfRegistered": true,
-                        "type": "module"
-                      },
+                      "url": "__HOST__/index.html",
                       "context": {
-                        "namespaceId": ":namespace",
-                        "resourceId": ":resourceName"
+                        "openkcmPage": "domain-key",
+                        "domainKeyNamespace": ":namespace",
+                        "domainKeyName": ":resourceName"
                       }
                     }
                   ]

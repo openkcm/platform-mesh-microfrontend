@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { allowsL1, checkL1Permission, L1_MARKER, useL1Permission } from './l1Permission';
+import { allowsL1, checkL1Permission, devMockGrant, L1_MARKER, useL1Permission } from './l1Permission';
 import { emptyRuntimeContext, type RuntimeContext } from './luigi';
 
 const grant = [{resource: L1_MARKER.resource, name:'account-l1', actions:['manage_l1']}];
@@ -71,6 +71,16 @@ it('does not grant access from the dev mock or missing identity', async()=>{
     expect(await checkL1Permission(ctx,new AbortController().signal)).toBe(false);
   }
   expect(request).not.toHaveBeenCalled();
+});
+
+it('grants the dev mock only in local dev with the flag on', () => {
+  const mock={...context(),source:'mock' as const,token:null};
+  const dev={DEV:true,VITE_LUIGI_MOCK_L1:'true'};
+  expect(devMockGrant(mock,dev)).toBe(true);
+  expect(devMockGrant(mock,{...dev,VITE_LUIGI_MOCK_L1:'false'})).toBe(false);
+  expect(devMockGrant(mock,{DEV:true})).toBe(false);
+  expect(devMockGrant(mock,{...dev,DEV:false})).toBe(false);
+  expect(devMockGrant({...mock,source:'luigi'},dev)).toBe(false);
 });
 
 

@@ -111,6 +111,7 @@ ui5-option[selected] {
   container: page / inline-size;
   /* Width of the lead track (tier chip or provider icon) shared by section headers and key cards. */
   --key-lead: 3.75rem;
+  --key-status: 7.5rem;
 }
 
 .ellipsis {
@@ -157,7 +158,7 @@ ui5-option[selected] {
 /* Let each action group use its full width beside the status. */
 .key-header {
   display: grid;
-  grid-template-columns: var(--key-lead) minmax(0, 1fr) max-content max-content;
+  grid-template-columns: var(--key-lead) minmax(0, 1fr) var(--key-status) max-content;
   grid-template-areas: 'lead title status actions';
   align-items: center;
   column-gap: 0.75rem;
@@ -184,21 +185,25 @@ ui5-option[selected] {
 
 .key-header .key-status {
   grid-area: status;
-  min-width: 6.5rem;
+  width: 100%;
   height: 1.625rem;
 }
 
 .key-actions {
   grid-area: actions;
-  display: flex;
+  display: grid;
+  grid-template-columns: 7rem 2rem 2rem;
+  grid-template-areas: 'lifecycle edit delete';
   justify-content: end;
   align-items: center;
-  gap: 0.5rem;
+  column-gap: 0.5rem;
 }
 
 .key-actions > ui5-button {
+  grid-area: lifecycle;
+  width: 100%;
+  min-width: 0;
   height: 2rem;
-  min-width: 6.5rem;
 }
 
 .key-actions > ui5-button[icon] {
@@ -206,12 +211,12 @@ ui5-option[selected] {
   width: 2rem;
 }
 
-/* Keep every tier's action labels at their full size. */
-[data-tier='L1'] .key-actions > ui5-button,
-[data-tier='L2'] .key-actions > ui5-button,
-[data-tier='L3'] .key-actions > ui5-button,
-[data-tier='L4'] .key-actions > ui5-button {
-  flex-shrink: 0;
+.key-actions > ui5-button[icon='edit'] {
+  grid-area: edit;
+}
+
+.key-actions > ui5-button[icon='delete'] {
+  grid-area: delete;
 }
 
 /* Keep space for the child key reference beside the other facts. */
@@ -244,6 +249,161 @@ ui5-option[selected] {
   grid-area: child;
 }
 
+.key-facts > .key-details-link {
+  grid-area: child;
+  justify-self: end;
+  align-self: center;
+}
+
+.detail-header {
+  display: grid;
+  grid-template-columns: var(--key-lead) minmax(0, 1fr) var(--key-status);
+  align-items: center;
+  column-gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0 1rem;
+}
+
+.detail-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.detail-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.detail-status {
+  width: 100%;
+  height: 1.625rem;
+}
+
+.detail-panel {
+  border: 1px solid var(--sapGroup_ContentBorderColor);
+  border-radius: var(--sapGroup_BorderCornerRadius);
+  background: var(--sapList_Background);
+  box-shadow: 0 1px 2px rgba(34, 53, 72, 0.1);
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr);
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.detail-list dt,
+.detail-list dd {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 1.25rem;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--sapList_BorderColor);
+}
+
+.detail-list dt {
+  color: var(--sapContent_LabelColor);
+}
+
+.detail-list dt:last-of-type,
+.detail-list dd:last-of-type {
+  border-bottom: none;
+}
+
+.detail-root {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.detail-wrap {
+  overflow-wrap: anywhere;
+}
+
+.detail-group-title {
+  margin: 0 0 0.375rem;
+  color: var(--sapContent_LabelColor);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.detail-filter {
+  width: 16rem;
+  max-width: 100%;
+}
+
+.detail-table-wrap {
+  overflow-x: auto;
+}
+
+.detail-table {
+  width: 100%;
+  min-width: 40rem;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.875rem;
+}
+
+.detail-table th {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--sapList_BorderColor);
+  background: var(--sapList_HeaderBackground);
+  color: var(--sapContent_LabelColor);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  text-align: left;
+}
+
+.detail-table th:nth-child(1) {
+  width: 26%;
+}
+
+.detail-table th:nth-child(2) {
+  width: 18%;
+}
+
+.detail-table th:nth-child(3) {
+  width: 8.5rem;
+}
+
+.detail-table td {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--sapList_BorderColor);
+  vertical-align: middle;
+}
+
+.detail-table td > .ellipsis {
+  display: block;
+}
+
+.detail-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.detail-table tbody tr:hover {
+  background: var(--sapList_Hover_Background);
+}
+
+.detail-table .detail-table-count {
+  width: 6.5rem;
+  text-align: right;
+}
+
+.detail-table-name {
+  font-weight: 600;
+}
+
+.detail-table-empty {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--sapList_BorderColor);
+}
+
 .key-ref {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -269,6 +429,24 @@ ui5-option[selected] {
   width: 1rem;
   height: 1rem;
   color: var(--sapButton_Lite_TextColor);
+}
+
+.copyable-full {
+  display: block;
+}
+
+.copyable-full .mono {
+  word-break: break-all;
+}
+
+.copyable-full ui5-icon {
+  display: inline-block;
+  margin-left: 0.375rem;
+  vertical-align: -0.1875rem;
+}
+
+.section-hint {
+  padding: 0 0.5rem;
 }
 
 .copied {
@@ -309,7 +487,7 @@ ui5-option[selected] {
 }
 
 .key-child .key-header {
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  grid-template-columns: minmax(0, 1fr) var(--key-status) max-content;
   grid-template-areas: 'title status actions';
 }
 
@@ -449,16 +627,6 @@ ui5-option[selected] {
   border-bottom: 1px solid var(--sapGroup_ContentBorderColor);
 }
 
-.action-slot {
-  flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
-}
-
-.action-slot-wide {
-  width: 6.5rem;
-}
-
 @container page (max-width: 64rem) {
   .key-facts {
     grid-template-columns: minmax(0, 1fr) 20.5rem;
@@ -469,9 +637,53 @@ ui5-option[selected] {
 }
 
 @container page (max-width: 48rem) {
+  .tier-connector {
+    display: none;
+  }
+
+  .key-header:not(:has(.key-status)) {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-areas: 'title actions';
+  }
+
+  .key-header:not(:has(.key-status)) .key-actions {
+    grid-template-columns: 2rem;
+    grid-template-areas: 'delete';
+  }
+
+  .detail-header {
+    grid-template-columns: minmax(0, 1fr) var(--key-status);
+  }
+
+  .detail-header .tier-badge {
+    display: none;
+  }
+
+  .detail-table {
+    min-width: 32rem;
+  }
+
+  .detail-table th:nth-child(5),
+  .detail-table td:nth-child(5) {
+    display: none;
+  }
+
+  .detail-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detail-list dt {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .detail-list dd {
+    padding-top: 0.25rem;
+  }
+
   .key-header,
   .key-child .key-header {
-    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-columns: minmax(0, 1fr) var(--key-status);
     grid-template-areas:
       'title status'
       'actions actions';
@@ -480,10 +692,6 @@ ui5-option[selected] {
 
   .key-header .key-lead {
     display: none;
-  }
-
-  .key-actions {
-    flex-wrap: wrap;
   }
 
   .key-card-body {

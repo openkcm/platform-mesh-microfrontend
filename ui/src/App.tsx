@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bar,
   BusyIndicator,
@@ -39,15 +39,18 @@ import '@ui5/webcomponents-icons/dist/edit.js';
 import '@ui5/webcomponents-icons/dist/copy.js';
 import '@ui5/webcomponents-icons/dist/broken-link.js';
 import '@ui5/webcomponents-icons/dist/slim-arrow-down.js';
+import '@ui5/webcomponents-icons/dist/nav-back.js';
+import '@ui5/webcomponents-icons/dist/navigation-right-arrow.js';
 import { registerIcon } from '@ui5/webcomponents-base/dist/asset-registries/Icons.js';
 
-import { ROOT_KEY_PROVIDERS, emptyRootKey, rootKeyKind } from './lib/rootKeys';
+import { ROOT_KEY_PROVIDERS, emptyRootKey, rootKeyConfig, rootKeyKind, type ConfigRow } from './lib/rootKeys';
 import { L1KeyManagers } from './components/L1KeyManagers';
 import { useL1Permission } from './lib/l1Permission';
 import { copyText } from './lib/clipboard';
 import {
-  navigateToDomainKey,
   emptyRuntimeContext,
+  navigateToDomainKey,
+  navigateToKeys,
   subscribeToLuigi,
   type RuntimeContext
 } from './lib/luigi';
@@ -92,7 +95,7 @@ import {
   orderedDomainKeys,
   parentNamespace,
   scopeLabel,
-  serviceKeyOn
+  serviceKeysOn
 } from './lib/domainKeys';
 import { isDeleting, keyLifecycle } from './lib/lifecycle';
 import { readyProblem, type ProblemContext, type ReadyCondition } from './lib/conditions';
@@ -101,15 +104,20 @@ import type { DataEncryptionKey, DomainKey, DomainKeyScope, RootKey, ServiceKey,
 const RFC_1123 = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
 const DIALOG_WIDTH = 'min(28rem, 80vw)';
 const ROOT_KEY_DIALOG_WIDTH = 'min(30rem, 80vw)';
+const ROOT_KEY_DETAILS_WIDTH = 'min(36rem, 85vw)';
 const ROOT_KEY_FORM_MIN_HEIGHT = '38.75rem';
 const CONFIRM_DIALOG_WIDTH = 'min(26rem, 80vw)';
 const NAME_HINT = 'Lowercase letters, digits and dashes.';
+const SYSTEM_KEY_HINT = 'To change a System key, select all namespaces.';
+const ROOT_KEY_DELETE_HINT = 'Only L1 Key Managers can delete Root Keys.';
 const EMPTY_OPENBAO_FIELDS = {
   serverAddress: '', enginePath: '', keyName: '', certAuthMountPath: '', certAuthRoleName: ''
 };
 const EMPTY_AWS_FIELDS = { region: '', keyUri: '', roleArn: '', accessKeyId: '', secretAccessKey: '' };
 const EMPTY_AZURE_FIELDS = { vaultUrl: '', keyName: '', tenantId: '', clientId: '' };
 const COPY_FEEDBACK_MS = 1500;
+const ID_HEAD = 8;
+const ID_TAIL = 6;
 type SectionTier = 'L1' | 'L2' | 'L3';
 const SECTION_TIERS: SectionTier[] = ['L1', 'L2', 'L3'];
 const COLLAPSE_MS = 200;
@@ -340,6 +348,7 @@ const TierTile = ({
 const TierConnector = () => (
   <Icon
     name="chain-link"
+    className="tier-connector"
     style={{
       color: 'var(--sapContent_NonInteractiveIconColor)',
       flexShrink: 0,
@@ -456,7 +465,10 @@ const Truncate = ({
   </span>
 );
 
-const CopyableId = ({ id }: { id?: string }) => {
+const shortId = (id: string): string =>
+  id.length > ID_HEAD + ID_TAIL + 1 ? `${id.slice(0, ID_HEAD)}…${id.slice(-ID_TAIL)}` : id;
+
+const CopyableId = ({ id, full }: { id?: string; full?: boolean }) => {
   const icon = useRef<IconDomRef>(null);
   const [copied, setCopied] = useState<boolean | null>(null);
 
@@ -468,8 +480,10 @@ const CopyableId = ({ id }: { id?: string }) => {
 
   if (!id) return <span>-</span>;
   return (
-    <div className="copyable">
-      <Truncate text={id} className="mono" />
+    <div className={full ? 'copyable copyable-full' : 'copyable'}>
+      {full
+        ? <span className="mono detail-wrap">{id}</span>
+        : <Truncate text={shortId(id)} title={id} className="mono" />}
       <Icon
         ref={icon}
         name="copy"
@@ -516,30 +530,28 @@ const MissingRef = ({ name }: { name: string }) => (
   <Truncate text={`${name} is missing`} style={{ color: 'var(--sapNegativeTextColor)' }} />
 );
 
-const ActionSlot = ({ wide }: { wide?: boolean }) => (
-  <span className={wide ? 'action-slot action-slot-wide' : 'action-slot'} aria-hidden="true" />
-);
-
 const LifecycleToggle = ({
   lifecycle,
   busyAction,
   blockedReason,
+  disabledReason,
   onToggle
 }: {
   lifecycle: string;
   busyAction: BusyActionKind;
   blockedReason?: string;
+  disabledReason?: string;
   onToggle: () => void;
 }) => {
   const label = lifecycleActionLabel(lifecycle);
-  if (!label) return <ActionSlot wide />;
-  const blocked = label === 'Activate' && Boolean(blockedReason);
+  if (!label) return null;
+  const reason = disabledReason ?? (label === 'Activate' ? blockedReason : undefined);
   return (
     <Button
-      design={label === 'Activate' && !blocked ? 'Emphasized' : 'Default'}
-      disabled={busyAction !== null || blocked}
+      design={label === 'Activate' && !reason ? 'Emphasized' : 'Default'}
+      disabled={busyAction !== null || Boolean(reason)}
       onClick={onToggle}
-      tooltip={blocked ? blockedReason : undefined}
+      tooltip={reason}
     >
       {busyAction === 'lifecycle' ? '…' : label}
     </Button>
@@ -611,8 +623,7 @@ const Chip = ({ text, kind }: { text: string; kind?: string }) => (
       borderRadius: '0.6rem',
       background: 'var(--sapList_GroupHeaderBackground)',
       border: '1px solid var(--sapGroup_TitleBorderColor)',
-      fontSize: '0.7rem',
-      fontFamily: 'var(--sapContent_MonospaceFontFamily)',
+      fontSize: '0.75rem',
       maxWidth: '100%'
     }}
   >
@@ -621,7 +632,9 @@ const Chip = ({ text, kind }: { text: string; kind?: string }) => (
         {kind}
       </span>
     )}
-    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
+    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'var(--sapContent_MonospaceFontFamily)' }}>
+      {text}
+    </span>
   </span>
 );
 
@@ -663,14 +676,12 @@ const ServiceKeyCard = ({
       lifecycle={lifecycle}
       actions={
         <>
-          <ActionSlot wide />
           <LifecycleToggle
             lifecycle={lifecycle}
             busyAction={busyAction}
             blockedReason={parentActive ? undefined : 'Cannot activate while the Domain Key is not Active.'}
             onToggle={onLifecycleToggle}
           />
-          <ActionSlot />
           <Button
             design="Transparent"
             icon="delete"
@@ -868,13 +879,31 @@ const ProviderIcon = ({
 
 /* ------------------------------- Root and domain keys ---------------------- */
 
+const findLinkedRootKey = (
+  domainKey: DomainKey,
+  rootKeys: RootKey[],
+  namespace: string,
+  accountNamespace: string
+): RootKey | undefined => {
+  const primary = linkedRootKeyRef(domainKey);
+  return primary
+    ? rootKeys.find(
+        (rk) =>
+          rk.kind === primary.kind &&
+          (rk.metadata.namespace || accountNamespace) === (primary.namespace || namespace) &&
+          rk.metadata.name === primary.name
+      )
+    : undefined;
+};
+
 const RootKeyCard = ({
-  rk, busyAction, canManage, onDelete
+  rk, busyAction, canManage, onDelete, onDetails
 }: {
   rk: RootKey;
   busyAction: BusyActionKind;
   canManage: boolean;
   onDelete: () => void;
+  onDetails: () => void;
 }) => {
   const writeInFlight = busyAction !== null || isDeleting(rk);
   const region = typeof rk.spec.region === 'string' && rk.spec.region ? rk.spec.region : undefined;
@@ -888,29 +917,77 @@ const RootKeyCard = ({
       lifecycle={isDeleting(rk) ? 'Deleting' : undefined}
       actions={
         <>
-          <ActionSlot wide />
-          <ActionSlot wide />
-          <ActionSlot />
-          {canManage
-            ? (
-              <Button
-                design="Transparent"
-                icon="delete"
-                disabled={writeInFlight}
-                onClick={onDelete}
-                tooltip="Delete Root Key"
-              />
-            )
-            : <ActionSlot />}
+          <Button
+            design="Transparent"
+            icon="delete"
+            disabled={writeInFlight || !canManage}
+            onClick={onDelete}
+            tooltip={canManage ? 'Delete Root Key' : ROOT_KEY_DELETE_HINT}
+          />
         </>
       }
     >
-      {keyUri && (
-        <div className="key-facts">
-          <Fact area="id" label="Key ARN"><CopyableId id={keyUri} /></Fact>
-        </div>
-      )}
+      <div className="key-facts">
+        {keyUri && <Fact area="id" label="Key ARN"><CopyableId id={keyUri} /></Fact>}
+        <Button
+          className="key-details-link"
+          design="Transparent"
+          endIcon="navigation-right-arrow"
+          accessibleName={`View details of ${rk.metadata.name}`}
+          onClick={onDetails}
+        >
+          View details
+        </Button>
+      </div>
     </KeyCard>
+  );
+};
+
+const RootKeyDetailsDialog = ({ rk, onClose }: { rk: RootKey | null; onClose: () => void }) => {
+  const general: ConfigRow[] = rk
+    ? [
+        { label: 'Provider', value: providerVisual(rk.kind).label },
+        { label: 'Tenant', value: rk.spec.tenantNameRef || '-' },
+        { label: 'Created', value: formatTimestamp(rk.metadata.creationTimestamp) ?? '-' }
+      ]
+    : [];
+  const groups = rk ? [{ title: 'General', rows: general }, ...rootKeyConfig(rk)] : [];
+  return (
+    <Dialog
+      open={Boolean(rk)}
+      headerText={rk ? `Root Key details: ${rk.metadata.name}` : 'Root Key details'}
+      initialFocus="root-key-details-close"
+      onClose={onClose}
+      footer={
+        <Bar
+          design="Footer"
+          endContent={<Button id="root-key-details-close" design="Transparent" onClick={onClose}>Close</Button>}
+        />
+      }
+    >
+      <FlexBox
+        direction={FlexBoxDirection.Column}
+        style={{ gap: '1rem', width: ROOT_KEY_DETAILS_WIDTH, padding: '0.5rem 0' }}
+      >
+        {groups.map((group) => (
+          <section key={group.title} className="detail-group">
+            <h4 className="detail-group-title">{group.title}</h4>
+            <dl className="detail-panel detail-list">
+              {group.rows.map((row) => (
+                <Fragment key={row.label}>
+                  <dt>{row.label}</dt>
+                  <dd>
+                    {row.copy
+                      ? <CopyableId id={row.value} full />
+                      : <span className="detail-wrap">{row.value}</span>}
+                  </dd>
+                </Fragment>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </FlexBox>
+    </Dialog>
   );
 };
 
@@ -918,77 +995,62 @@ const DomainKeyCard = ({
   domainKey,
   namespace,
   namespaceLabel,
-  servedBy,
   rootKeys,
   accountNamespace,
   busyAction,
   onEditDk,
   onLifecycleToggleDk,
   onDeleteDk,
-  onDetailDk,
+  onDetailsDk,
   readOnly
 }: {
   domainKey: DomainKey;
   namespace: string;
   namespaceLabel?: string;
-  servedBy?: string;
   rootKeys: RootKey[];
   accountNamespace: string;
   busyAction: BusyActionKind;
   onEditDk: () => void;
   onLifecycleToggleDk: () => void;
   onDeleteDk: () => void;
-  onDetailDk: () => void;
+  onDetailsDk: () => void;
   readOnly?: boolean;
 }) => {
   const lifecycle = keyLifecycle(domainKey);
   const locked = busyAction !== null || isDeleting(domainKey);
   const primary = linkedRootKeyRef(domainKey);
-  const primaryRk = primary
-    ? rootKeys.find(
-        (rk) =>
-          rk.kind === primary.kind &&
-          (rk.metadata.namespace || accountNamespace) === (primary.namespace || namespace) &&
-          rk.metadata.name === primary.name
-      )
-    : undefined;
+  const primaryRk = findLinkedRootKey(domainKey, rootKeys, namespace, accountNamespace);
 
   return (
     <KeyCard
       tier="L2"
       lead={<TierBadge tier="L2" />}
       name={domainKey.metadata.name}
-      subtitle={readOnly ? `${scopeLabel(domainKey)} · Read-only` : scopeLabel(domainKey)}
+      subtitle={readOnly ? `${scopeLabel(domainKey)} · Managed in all namespaces` : scopeLabel(domainKey)}
       namespaceLabel={namespaceLabel}
       lifecycle={lifecycle}
       actions={
         <>
-          <Button onClick={onDetailDk}>Details</Button>
-          {readOnly ? (
-            <>
-              <ActionSlot wide />
-              <ActionSlot />
-              <ActionSlot />
-            </>
-          ) : (
-            <>
-              <LifecycleToggle lifecycle={lifecycle} busyAction={busyAction} onToggle={onLifecycleToggleDk} />
-              <Button
-                design="Transparent"
-                icon="edit"
-                disabled={locked}
-                onClick={onEditDk}
-                tooltip="Edit Domain Key"
-              />
-              <Button
-                design="Transparent"
-                icon="delete"
-                disabled={locked}
-                onClick={onDeleteDk}
-                tooltip="Delete Domain Key"
-              />
-            </>
-          )}
+          <LifecycleToggle
+            lifecycle={lifecycle}
+            busyAction={busyAction}
+            disabledReason={readOnly ? SYSTEM_KEY_HINT : undefined}
+            onToggle={onLifecycleToggleDk}
+          />
+          <Button
+            design="Transparent"
+            icon="edit"
+            disabled={locked || readOnly}
+            onClick={onEditDk}
+            tooltip={readOnly ? SYSTEM_KEY_HINT : 'Edit Domain Key'}
+          />
+          <Button
+            design="Transparent"
+            icon="delete"
+            disabled={locked || readOnly}
+            onClick={onDeleteDk}
+            tooltip={readOnly ? SYSTEM_KEY_HINT : 'Delete Domain Key'}
+          />
         </>
       }
     >
@@ -1013,13 +1075,197 @@ const DomainKeyCard = ({
             'Not linked'
           )}
         </Fact>
-        {domainKeyScope(domainKey) === 'Instance' && (
-          <Fact area="child" label="Child Service Key">
-            {servedBy ? <KeyRef lead={<TierBadge tier="L3" />} name={servedBy} /> : 'None yet'}
-          </Fact>
-        )}
+        <Button
+          className="key-details-link"
+          design="Transparent"
+          endIcon="navigation-right-arrow"
+          accessibleName={`View details of ${domainKey.metadata.name}`}
+          onClick={onDetailsDk}
+        >
+          View details
+        </Button>
       </div>
     </KeyCard>
+  );
+};
+
+const formatTimestamp = (value?: string): string | undefined => {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+};
+
+const DETAIL_FILTER_MIN = 6;
+
+const DetailSectionHeader = ({
+  tier,
+  title,
+  count,
+  rightContent
+}: {
+  tier: Tier;
+  title: string;
+  count?: number;
+  rightContent?: React.ReactNode;
+}) => (
+  <div className="section-header">
+    <div className="key-lead">
+      <TierBadge tier={tier} />
+    </div>
+    <div className="section-title">
+      <Title level="H3" style={{ margin: 0 }}>
+        {title}
+      </Title>
+      {count !== undefined && <span style={{ color: 'var(--sapContent_LabelColor)' }}>{keyCount(count)}</span>}
+    </div>
+    <div className="section-actions">{rightContent}</div>
+  </div>
+);
+
+const DomainKeyDetails = ({
+  domainKey,
+  namespace,
+  rootKeys,
+  serviceKeys,
+  dataEncryptionKeys,
+  accountNamespace
+}: {
+  domainKey: DomainKey;
+  namespace: string;
+  rootKeys: RootKey[];
+  serviceKeys: ServiceKey[];
+  dataEncryptionKeys: DataEncryptionKey[];
+  accountNamespace: string;
+}) => {
+  const [filter, setFilter] = useState('');
+  const lifecycle = keyLifecycle(domainKey);
+  const crypto = domainKey.status?.cryptoState;
+  const primary = linkedRootKeyRef(domainKey);
+  const primaryRk = findLinkedRootKey(domainKey, rootKeys, namespace, accountNamespace);
+  const rootRegion =
+    typeof primaryRk?.spec.region === 'string' && primaryRk.spec.region ? primaryRk.spec.region : undefined;
+  const children = useMemo(
+    () => serviceKeysOn(domainKey, serviceKeys).sort((a, b) =>
+      (a.metadata.namespace ?? '').localeCompare(b.metadata.namespace ?? '') ||
+      a.metadata.name.localeCompare(b.metadata.name)),
+    [domainKey, serviceKeys]
+  );
+  const query = filter.trim().toLowerCase();
+  const visible = query
+    ? children.filter((sk) =>
+      sk.metadata.name.toLowerCase().includes(query) || (sk.metadata.namespace ?? '').toLowerCase().includes(query))
+    : children;
+  const dataKeyCount = (sk: ServiceKey) =>
+    dataEncryptionKeys.filter((dek) =>
+      dek.spec.serviceKeyRef === sk.metadata.name && dek.metadata.namespace === sk.metadata.namespace).length;
+
+  return (
+    <>
+      <div className="detail-header">
+        <TierBadge tier="L2" />
+        <div className="detail-title">
+          <Truncate text={domainKey.metadata.name} className="detail-name" />
+          <Truncate
+            text={namespace === accountNamespace
+              ? `Domain Key · ${scopeLabel(domainKey)}`
+              : `Domain Key · ${scopeLabel(domainKey)} · Namespace: ${namespace}`}
+            className="muted"
+          />
+        </div>
+        <StatusPill className="detail-status" state={lifecycleObjectState(lifecycle)}>
+          {lifecycle}
+        </StatusPill>
+      </div>
+      <ProblemStrip
+        ready={conditionByType(domainKey.status?.conditions, 'Ready')}
+        context={{ kind: 'Domain Key' }}
+      />
+      <dl className="detail-panel detail-list">
+        <dt>Parent Root Key</dt>
+        <dd>
+          {primaryRk ? (
+            <span className="detail-root">
+              <ProviderIcon kind={primaryRk.kind} size="S" />
+              <Truncate text={primaryRk.metadata.name} />
+              <Truncate
+                text={rootRegion
+                  ? `${providerVisual(primaryRk.kind).label} · ${rootRegion}`
+                  : providerVisual(primaryRk.kind).label}
+                className="muted"
+              />
+            </span>
+          ) : primary ? (
+            <MissingRef name={primary.name} />
+          ) : (
+            'Not linked'
+          )}
+        </dd>
+        <dt>Key ID</dt>
+        <dd><CopyableId id={crypto?.id} /></dd>
+        <dt>Version</dt>
+        <dd>{crypto?.version ?? '-'}</dd>
+        <dt>Last rotated</dt>
+        <dd>{formatTimestamp(crypto?.lastRotatedAt) ?? 'Never'}</dd>
+        <dt>Created</dt>
+        <dd>{formatTimestamp(domainKey.metadata.creationTimestamp) ?? '-'}</dd>
+      </dl>
+
+      <DetailSectionHeader
+        tier="L3"
+        title="Service Keys"
+        count={children.length}
+        rightContent={children.length >= DETAIL_FILTER_MIN && (
+          <Input
+            className="detail-filter"
+            value={filter}
+            placeholder="Filter by name or namespace"
+            showClearIcon
+            onInput={(e) => setFilter(inputValue(e))}
+          />
+        )}
+      />
+      {children.length === 0 ? (
+        <MessageStrip design="Information" hideCloseButton>
+          No Service Keys use this Domain Key yet.
+        </MessageStrip>
+      ) : (
+        <div className="detail-panel detail-table-wrap">
+          <table className="detail-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Namespace</th>
+                <th>Status</th>
+                <th>Key ID</th>
+                <th className="detail-table-count">Data Keys</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((sk) => {
+                const skLifecycle = keyLifecycle(sk);
+                const skNamespace = sk.metadata.namespace ?? '';
+                return (
+                  <tr key={`${skNamespace}/${sk.metadata.name}`}>
+                    <td><Truncate text={sk.metadata.name} className="detail-table-name" /></td>
+                    <td>
+                      {skNamespace && skNamespace !== accountNamespace
+                        ? <Truncate text={skNamespace} />
+                        : <span className="muted">Account</span>}
+                    </td>
+                    <td><StatusPill state={lifecycleObjectState(skLifecycle)}>{skLifecycle}</StatusPill></td>
+                    <td><CopyableId id={sk.status?.cryptoState?.id} /></td>
+                    <td className="detail-table-count">{dataKeyCount(sk)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {visible.length === 0 && (
+            <div className="detail-table-empty muted">No Service Keys match "{filter.trim()}".</div>
+          )}
+        </div>
+      )}
+    </>
   );
 };
 
@@ -1151,6 +1397,7 @@ const App = () => {
   const [rkObFields, setRkObFields] = useState(EMPTY_OPENBAO_FIELDS);
   const [rkAwsFields, setRkAwsFields] = useState(EMPTY_AWS_FIELDS);
   const [rkAzureFields, setRkAzureFields] = useState(EMPTY_AZURE_FIELDS);
+  const [rkDetails, setRkDetails] = useState<RootKey | null>(null);
 
   const [dkOpen, setDkOpen] = useState(false);
   const [dkBusy, setDkBusy] = useState(false);
@@ -1188,6 +1435,7 @@ const App = () => {
 
   const accountNamespace = ctx.accountNamespace || 'default';
   const resourceNamespace = ctx.namespace;
+  const dataNamespace = ctx.openkcmPage === 'domain-key' ? null : resourceNamespace;
 
   const accountName = useMemo(
     () => tenant?.metadata.name ?? ctx.workspacePath?.split(':').pop() ?? '',
@@ -1212,8 +1460,8 @@ const App = () => {
     setPendingAction(null);
     setRkOpen(false); setDkOpen(false); setSkOpen(false); setDekOpen(false);
     setRkBusy(false); setDkBusy(false); setSkBusy(false); setDekBusy(false);
-    setDkEditing(null); setDekParent(null);
-  }, [accountNamespace, ctx.graphqlUrl, ctx.viewLevel, ctx.workspacePath, ctx.token, resourceNamespace]);
+    setDkEditing(null); setDekParent(null); setRkDetails(null);
+  }, [accountNamespace, ctx.graphqlUrl, ctx.viewLevel, ctx.workspacePath, ctx.token, resourceNamespace, dataNamespace]);
 
   const reload = useCallback(async (options?: { background?: boolean }) => {
     if (ctx.openkcmPage === 'l1-key-managers' || !ctx.graphqlUrl || !ctx.workspacePath || accountClient.signal?.aborted || accountClient.workspacePath !== ctx.workspacePath) return;
@@ -1231,11 +1479,11 @@ const App = () => {
       ]);
       const roots = mergeRootKeys(rootLists.flat());
       const [dks, sks, deks] =
-        resourceNamespace
+        dataNamespace
           ? await Promise.all([
-              listDomainKeys(accountClient, resourceNamespace),
-              listServiceKeys(accountClient, resourceNamespace),
-              listDataEncryptionKeys(accountClient, resourceNamespace)
+              listDomainKeys(accountClient, dataNamespace),
+              listServiceKeys(accountClient, dataNamespace),
+              listDataEncryptionKeys(accountClient, dataNamespace)
             ])
           : await Promise.all([
               listAllDomainKeys(accountClient),
@@ -1244,7 +1492,7 @@ const App = () => {
             ]);
       // With one namespace selected, the System Domain Keys of the account namespace are still shown (read-only).
       let systemDks: DomainKey[] = [];
-      if (resourceNamespace && resourceNamespace !== accountNamespace) {
+      if (dataNamespace && dataNamespace !== accountNamespace) {
         const account = await listDomainKeys(accountClient, accountNamespace).catch(() => null);
         systemDks = (account?.items ?? []).filter((dk) => domainKeyScope(dk) === 'System' &&
           !dks.items.some((own) => own.metadata.name === dk.metadata.name && own.metadata.namespace === dk.metadata.namespace));
@@ -1266,7 +1514,7 @@ const App = () => {
       hasLoadedRef.current = true;
       if (initialLoad) setLoading(false);
     }
-  }, [accountClient, accountNamespace, ctx.graphqlUrl, ctx.workspacePath, ctx.openkcmPage, resourceNamespace]);
+  }, [accountClient, accountNamespace, ctx.graphqlUrl, ctx.workspacePath, ctx.openkcmPage, dataNamespace]);
 
   useEffect(() => {
     void reload();
@@ -1285,9 +1533,9 @@ const App = () => {
     };
     const unsubscribers = [subscribeRootKeys(accountClient, accountNamespace, queueReload)];
     unsubscribers.push(
-      subscribeServiceKeys(accountClient, resourceNamespace, serviceKeyResourceVersion, queueReload),
-      subscribeDomainKeys(accountClient, resourceNamespace, domainKeyResourceVersion, queueReload),
-      subscribeDataEncryptionKeys(accountClient, resourceNamespace, queueReload)
+      subscribeServiceKeys(accountClient, dataNamespace, serviceKeyResourceVersion, queueReload),
+      subscribeDomainKeys(accountClient, dataNamespace, domainKeyResourceVersion, queueReload),
+      subscribeDataEncryptionKeys(accountClient, dataNamespace, queueReload)
     );
     return () => {
       if (reloadTimer != null) window.clearTimeout(reloadTimer);
@@ -1298,9 +1546,9 @@ const App = () => {
     accountNamespace,
     ctx.graphqlUrl,
     ctx.openkcmPage,
+    dataNamespace,
     domainKeyResourceVersion,
     reload,
-    resourceNamespace,
     serviceKeyResourceVersion
   ]);
 
@@ -1759,6 +2007,76 @@ const App = () => {
     );
   }
 
+  if (ctx.openkcmPage === 'domain-key') {
+    const target = ctx.domainKey;
+    const detailKey = target
+      ? domainKeys.find((dk) => domainKeyNamespace(dk) === target.namespace && dk.metadata.name === target.name)
+      : undefined;
+    const goBack = () => {
+      void navigateToKeys(accountClient.signal).catch((err) => {
+        if (!accountClient.signal?.aborted) setError((err as Error).message);
+      });
+    };
+    return (
+      <FlexBox direction={FlexBoxDirection.Column} style={{ height: '100vh' }}>
+        <header className="app-header">
+          <div className="app-header-inner page-width">
+            <span className="app-title">OpenKCM</span>
+            <span className="app-subtitle">Domain Key details</span>
+          </div>
+        </header>
+        <div
+          style={{
+            flex: 1,
+            overflow: 'auto',
+            padding: '1.25rem 1.5rem',
+            background: 'var(--sapBackgroundColor)'
+          }}
+        >
+          <FlexBox
+            direction={FlexBoxDirection.Column}
+            className="page page-width"
+            style={{ gap: 'var(--page-gap)', '--page-gap': '1.25rem' } as React.CSSProperties}
+            data-ui5-compact-size
+          >
+            {error && (
+              <MessageStrip design="Negative" onClose={() => setError(null)}>
+                {error}
+              </MessageStrip>
+            )}
+            <section className="keys-box" aria-label="Domain Key details">
+              <div className="keys-box-header">
+                <Button design="Transparent" icon="nav-back" onClick={goBack}>
+                  Back to Keys
+                </Button>
+              </div>
+              {loading ? (
+                <FlexBox justifyContent={FlexBoxJustifyContent.Center} style={{ padding: '2rem' }}>
+                  <BusyIndicator active size="M" />
+                </FlexBox>
+              ) : detailKey ? (
+                <DomainKeyDetails
+                  domainKey={detailKey}
+                  namespace={domainKeyNamespace(detailKey)}
+                  rootKeys={rootKeys}
+                  serviceKeys={serviceKeys}
+                  dataEncryptionKeys={dataEncryptionKeys}
+                  accountNamespace={accountNamespace}
+                />
+              ) : (
+                <MessageStrip design="Critical" hideCloseButton>
+                  {target
+                    ? `Domain Key ${target.name} was not found. It may have been deleted.`
+                    : 'No Domain Key was selected.'}
+                </MessageStrip>
+              )}
+            </section>
+          </FlexBox>
+        </div>
+      </FlexBox>
+    );
+  }
+
   const canCreateDk = Boolean(accountName);
   const canCreateSk = mintable.length > 0;
 
@@ -1802,7 +2120,6 @@ const App = () => {
         domainKey={dk}
         namespace={namespace}
         namespaceLabel={namespaceLabelFor(namespace)}
-        servedBy={serviceKeyOn(dk, serviceKeys)?.metadata.name}
         rootKeys={rootKeys}
         accountNamespace={accountNamespace}
         busyAction={busyActionFor('DomainKey', dk.metadata.name, namespace)}
@@ -1813,8 +2130,12 @@ const App = () => {
             keyLifecycle(dk)
           )
         }
-        onDetailDk={() => { void navigateToDomainKey(dk.metadata.name, namespace, accountClient.signal).catch((error) => { if (!accountClient.signal?.aborted) setError(error.message); }); }}
         onDeleteDk={() => setConfirmDelete({ kind: 'DomainKey', name: dk.metadata.name, namespace })}
+        onDetailsDk={() => {
+          void navigateToDomainKey(dk.metadata.name, namespace, accountClient.signal).catch((err) => {
+            if (!accountClient.signal?.aborted) setError((err as Error).message);
+          });
+        }}
         readOnly={Boolean(resourceNamespace) && namespace !== resourceNamespace}
       />
     );
@@ -1912,6 +2233,7 @@ const App = () => {
                         canManage={canManageL1}
                         busyAction={busyActionFor('RootKey', rk.metadata.name)}
                         onDelete={() => setConfirmDelete({ kind: 'RootKey', rootKey: rk })}
+                        onDetails={() => setRkDetails(rk)}
                       />
                     ))}
                   </FlexBox>
@@ -1942,7 +2264,7 @@ const App = () => {
                       Mint Service Key
                     </Button>
                   ) : (
-                    <span className="muted">Select a namespace to mint Service Keys.</span>
+                    <span className="muted section-hint">Select a namespace to mint Service Keys.</span>
                   )
                 }
               />
@@ -2483,6 +2805,11 @@ const App = () => {
           </div>
         </FlexBox>
       </Dialog>
+
+      <RootKeyDetailsDialog
+        rk={rkDetails && (rootKeys.find((key) => rootKeyListId(key) === rootKeyListId(rkDetails)) ?? null)}
+        onClose={() => setRkDetails(null)}
+      />
 
       {/* DEK creation dialog */}
       <Dialog
