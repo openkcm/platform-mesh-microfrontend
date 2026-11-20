@@ -36,6 +36,8 @@ import '@ui5/webcomponents-icons/dist/expand-all.js';
 import '@ui5/webcomponents-icons/dist/accept.js';
 import '@ui5/webcomponents-icons/dist/decline.js';
 import '@ui5/webcomponents-icons/dist/edit.js';
+import '@ui5/webcomponents-icons/dist/locked.js';
+import '@ui5/webcomponents-icons/dist/message-warning.js';
 import '@ui5/webcomponents-icons/dist/copy.js';
 import '@ui5/webcomponents-icons/dist/broken-link.js';
 import '@ui5/webcomponents-icons/dist/slim-arrow-down.js';
@@ -89,6 +91,7 @@ import {
 } from './lib/kcp';
 import {
   domainKeyScope,
+  isRootKeyLinked,
   linkedRootKeyRef,
   mintableDomainKeys,
   namespaceDomainKey,
@@ -98,7 +101,13 @@ import {
   serviceKeysOn
 } from './lib/domainKeys';
 import { isDeleting, keyLifecycle } from './lib/lifecycle';
-import { readyProblem, type ProblemContext, type ReadyCondition } from './lib/conditions';
+import {
+  readyProblem,
+  rootKeyChangeProblem,
+  type Problem,
+  type ProblemContext,
+  type ReadyCondition
+} from './lib/conditions';
 import type { DataEncryptionKey, DomainKey, DomainKeyScope, RootKey, ServiceKey, Tenant } from './types';
 
 const RFC_1123 = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
@@ -278,7 +287,7 @@ type DeleteTarget =
 
 type DeactivateTarget = Exclude<DeleteTarget, { kind: 'RootKey' }>;
 
-type DependentWarning = { kindLabel: string; names: string[]; unknown?: boolean };
+type DependentWarning = { kindLabel: string; names: string[]; unknown?: boolean; linked?: boolean };
 
 const lifecycleActionLabel = (current?: string): 'Activate' | 'Deactivate' | null => {
   if (current === 'Active') return 'Deactivate';
@@ -507,7 +516,7 @@ const CopyableId = ({ id, full }: { id?: string; full?: boolean }) => {
   );
 };
 
-type FactArea = 'id' | 'parent' | 'child';
+type FactArea = 'primary' | 'child';
 
 const Fact = ({ area, label, children }: { area: FactArea; label: string; children: React.ReactNode }) => (
   <div className={`key-fact key-fact-${area}`}>
@@ -530,27 +539,33 @@ const MissingRef = ({ name }: { name: string }) => (
   <Truncate text={`${name} is missing`} style={{ color: 'var(--sapNegativeTextColor)' }} />
 );
 
+type ClickTarget = { currentTarget: HTMLElement | null };
+
 const LifecycleToggle = ({
   lifecycle,
   busyAction,
   blockedReason,
-  disabledReason,
+  lockedReason,
+  onLocked,
   onToggle
 }: {
   lifecycle: string;
   busyAction: BusyActionKind;
   blockedReason?: string;
-  disabledReason?: string;
+  lockedReason?: string;
+  onLocked?: (event: ClickTarget) => void;
   onToggle: () => void;
 }) => {
   const label = lifecycleActionLabel(lifecycle);
   if (!label) return null;
-  const reason = disabledReason ?? (label === 'Activate' ? blockedReason : undefined);
+  const locked = Boolean(lockedReason);
+  const reason = lockedReason ?? (label === 'Activate' ? blockedReason : undefined);
   return (
     <Button
       design={label === 'Activate' && !reason ? 'Emphasized' : 'Default'}
-      disabled={busyAction !== null || Boolean(reason)}
-      onClick={onToggle}
+      className={locked ? 'locked-action' : undefined}
+      disabled={busyAction !== null || (Boolean(reason) && !locked)}
+      onClick={locked ? onLocked : onToggle}
       tooltip={reason}
     >
       {busyAction === 'lifecycle' ? '…' : label}
@@ -589,29 +604,44 @@ const KeyHeader = ({
   </div>
 );
 
+const KeyNote = ({ children }: { children: React.ReactNode }) => (
+  <div className="key-note">
+    <Icon name="locked" />
+    <span>{children}</span>
+  </div>
+);
+
 const KeyCard = ({
   tier,
+  note,
   children,
   ...header
-}: React.ComponentProps<typeof KeyHeader> & { tier: Tier; children?: React.ReactNode }) => (
+}: React.ComponentProps<typeof KeyHeader> & { tier: Tier; note?: string; children?: React.ReactNode }) => (
   <Card data-tier={tier} className="key-card">
     <div className="key-card-content">
       <div className="key-card-header">
         <KeyHeader {...header} />
+        {note && <KeyNote>{note}</KeyNote>}
       </div>
       {children && <div className="key-card-body">{children}</div>}
     </div>
   </Card>
 );
 
-const ProblemStrip = ({ ready, context }: { ready?: ReadyCondition; context: ProblemContext }) => {
-  const problem = readyProblem(ready, context);
-  return problem ? (
+const Strip = ({ problem }: { problem: Problem | null }) =>
+  problem ? (
     <MessageStrip design={problem.design} hideCloseButton>
       {problem.text}
     </MessageStrip>
   ) : null;
-};
+
+const ProblemStrip = ({ ready, context }: { ready?: ReadyCondition; context: ProblemContext }) => (
+  <Strip problem={readyProblem(ready, context)} />
+);
+
+const RootKeyChangeStrip = ({ domainKey }: { domainKey: DomainKey }) => (
+  <Strip problem={rootKeyChangeProblem(conditionByType(domainKey.status?.conditions, 'RootKeyChangeSupported'))} />
+);
 
 const Chip = ({ text, kind }: { text: string; kind?: string }) => (
   <span
@@ -697,10 +727,7 @@ const ServiceKeyCard = ({
         context={{ kind: 'Service Key', inactiveParent: blockingParent(sk, parentActive, 'Domain Key') }}
       />
       <div className="key-facts">
-        <Fact area="id" label="Key ID">
-          <CopyableId id={sk.status?.cryptoState?.id} />
-        </Fact>
-        <Fact area="parent" label="Parent Domain Key">
+        <Fact area="primary" label="Parent Domain Key">
           {parent ? (
             <KeyRef lead={<TierBadge tier="L2" />} name={parent.metadata.name} detail={scopeLabel(parent)} />
           ) : (
@@ -756,6 +783,10 @@ const ServiceKeyCard = ({
                       />
                     </>
                   }
+                />
+                <ProblemStrip
+                  ready={conditionByType(dek.status?.conditions, 'Ready')}
+                  context={{ kind: 'Data Key' }}
                 />
               </div>
             );
@@ -928,7 +959,7 @@ const RootKeyCard = ({
       }
     >
       <div className="key-facts">
-        {keyUri && <Fact area="id" label="Key ARN"><CopyableId id={keyUri} /></Fact>}
+        {keyUri && <Fact area="primary" label="Key ARN"><CopyableId id={keyUri} /></Fact>}
         <Button
           className="key-details-link"
           design="Transparent"
@@ -1018,6 +1049,10 @@ const DomainKeyCard = ({
 }) => {
   const lifecycle = keyLifecycle(domainKey);
   const locked = busyAction !== null || isDeleting(domainKey);
+  const [explained, setExplained] = useState<{ opener: HTMLElement; verb: string } | null>(null);
+  const explain = (verb: string) => (event: ClickTarget) => {
+    if (event.currentTarget) setExplained({ opener: event.currentTarget, verb });
+  };
   const primary = linkedRootKeyRef(domainKey);
   const primaryRk = findLinkedRootKey(domainKey, rootKeys, namespace, accountNamespace);
 
@@ -1026,43 +1061,56 @@ const DomainKeyCard = ({
       tier="L2"
       lead={<TierBadge tier="L2" />}
       name={domainKey.metadata.name}
-      subtitle={readOnly ? `${scopeLabel(domainKey)} · Managed in all namespaces` : scopeLabel(domainKey)}
+      subtitle={scopeLabel(domainKey)}
       namespaceLabel={namespaceLabel}
       lifecycle={lifecycle}
+      note={readOnly ? SYSTEM_KEY_HINT : undefined}
       actions={
         <>
           <LifecycleToggle
             lifecycle={lifecycle}
             busyAction={busyAction}
-            disabledReason={readOnly ? SYSTEM_KEY_HINT : undefined}
+            lockedReason={readOnly ? SYSTEM_KEY_HINT : undefined}
+            onLocked={explain((lifecycleActionLabel(lifecycle) ?? 'change').toLowerCase())}
             onToggle={onLifecycleToggleDk}
           />
           <Button
             design="Transparent"
             icon="edit"
-            disabled={locked || readOnly}
-            onClick={onEditDk}
+            className={readOnly ? 'locked-action' : undefined}
+            disabled={locked}
+            onClick={readOnly ? explain('edit') : onEditDk}
             tooltip={readOnly ? SYSTEM_KEY_HINT : 'Edit Domain Key'}
           />
           <Button
             design="Transparent"
             icon="delete"
-            disabled={locked || readOnly}
-            onClick={onDeleteDk}
+            className={readOnly ? 'locked-action' : undefined}
+            disabled={locked}
+            onClick={readOnly ? explain('delete') : onDeleteDk}
             tooltip={readOnly ? SYSTEM_KEY_HINT : 'Delete Domain Key'}
           />
         </>
       }
     >
+      <Popover
+        opener={explained?.opener}
+        open={Boolean(explained)}
+        placement="Bottom"
+        onClose={() => setExplained(null)}
+      >
+        <span className="locked-reason">
+          <Icon name="message-warning" />
+          {`To ${explained?.verb ?? 'change'} a System key, select all namespaces.`}
+        </span>
+      </Popover>
       <ProblemStrip
         ready={conditionByType(domainKey.status?.conditions, 'Ready')}
-        context={{ kind: 'Domain Key' }}
+        context={{ kind: 'Domain Key', linked: Boolean(primary) }}
       />
+      <RootKeyChangeStrip domainKey={domainKey} />
       <div className="key-facts">
-        <Fact area="id" label="Key ID">
-          <CopyableId id={domainKey.status?.cryptoState?.id} />
-        </Fact>
-        <Fact area="parent" label="Parent Root Key">
+        <Fact area="primary" label="Parent Root Key">
           {primaryRk ? (
             <KeyRef
               lead={<ProviderIcon kind={primaryRk.kind} size="S" />}
@@ -1178,8 +1226,9 @@ const DomainKeyDetails = ({
       </div>
       <ProblemStrip
         ready={conditionByType(domainKey.status?.conditions, 'Ready')}
-        context={{ kind: 'Domain Key' }}
+        context={{ kind: 'Domain Key', linked: Boolean(primary) }}
       />
+      <RootKeyChangeStrip domainKey={domainKey} />
       <dl className="detail-panel detail-list">
         <dt>Parent Root Key</dt>
         <dd>
@@ -1200,8 +1249,6 @@ const DomainKeyDetails = ({
             'Not linked'
           )}
         </dd>
-        <dt>Key ID</dt>
-        <dd><CopyableId id={crypto?.id} /></dd>
         <dt>Version</dt>
         <dd>{crypto?.version ?? '-'}</dd>
         <dt>Last rotated</dt>
@@ -1236,7 +1283,6 @@ const DomainKeyDetails = ({
                 <th>Name</th>
                 <th>Namespace</th>
                 <th>Status</th>
-                <th>Key ID</th>
                 <th className="detail-table-count">Data Keys</th>
               </tr>
             </thead>
@@ -1253,7 +1299,6 @@ const DomainKeyDetails = ({
                         : <span className="muted">Account</span>}
                     </td>
                     <td><StatusPill state={lifecycleObjectState(skLifecycle)}>{skLifecycle}</StatusPill></td>
-                    <td><CopyableId id={sk.status?.cryptoState?.id} /></td>
                     <td className="detail-table-count">{dataKeyCount(sk)}</td>
                   </tr>
                 );
@@ -1744,6 +1789,7 @@ const App = () => {
   };
 
   const dkValid = RFC_1123.test(dkName);
+  const dkRootKeyLocked = Boolean(dkEditing && isRootKeyLinked(dkEditing));
 
   const parseRootKeyId = (id: string): { kind: string; namespace: string; name: string } | null => {
     const parts = id.split('/');
@@ -1856,7 +1902,9 @@ const App = () => {
       const primary = dk.spec.primaryRootKeyRef;
       return (primary && matches(primary, dk)) || (dk.spec.fallbackRootKeyRefs ?? []).some((ref) => matches(ref, dk));
     });
-    return refs.length > 0 ? { kindLabel: 'Domain Key', names: refs.map((d) => d.metadata.name) } : null;
+    return refs.length > 0
+      ? { kindLabel: 'Domain Key', names: refs.map((d) => d.metadata.name), linked: refs.some(isRootKeyLinked) }
+      : null;
   }, [domainKeyNamespace, domainKeys, resourceNamespace, rootKeyNamespace]);
 
   const deleteDependents = useMemo<DependentWarning | null>(() => {
@@ -1924,8 +1972,9 @@ const App = () => {
     const count = deleteDependents.names.length;
     const keys = `${count} ${count === 1 ? deleteDependents.kindLabel : `${deleteDependents.kindLabel}s`}`;
     const them = count === 1 ? 'it' : 'them';
+    const remedy = deleteDependents.linked ? 'Delete' : 'Unlink or delete';
     return confirmDelete?.kind === 'RootKey'
-      ? `${deleteTargetName} is linked to ${keys}. Unlink or delete ${them} first.`
+      ? `${deleteTargetName} is linked to ${keys}. ${remedy} ${them} first.`
       : `${deleteTargetName} still has ${keys}. Delete ${them} first.`;
   })();
 
@@ -2541,7 +2590,11 @@ const App = () => {
                 >
                   Cancel
                 </Button>
-                <Button design="Emphasized" disabled={dkBusy || !dkValid} onClick={handleCreateDomainKey}>
+                <Button
+                  design="Emphasized"
+                  disabled={dkBusy || !dkValid || dkRootKeyLocked}
+                  onClick={handleCreateDomainKey}
+                >
                   {dkBusy ? (dkEditing ? 'Saving…' : 'Creating…') : dkEditing ? 'Save' : 'Create'}
                 </Button>
               </>
@@ -2606,7 +2659,7 @@ const App = () => {
           </FlexBox>
           <FlexBox direction={FlexBoxDirection.Column} style={{ gap: 2 }}>
             <Label>Parent Root Key</Label>
-            <Select disabled={!dkEditing} onChange={(e) => setDkPrimaryId(selectedValue(e))}>
+            <Select disabled={!dkEditing || dkRootKeyLocked} onChange={(e) => setDkPrimaryId(selectedValue(e))}>
               <Option data-value="" icon="broken-link" selected={dkPrimaryId === ''}>
                 Not linked
               </Option>
@@ -2627,7 +2680,17 @@ const App = () => {
             </Select>
             {!dkEditing && (
               <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
-                Link a root key later with Edit.
+                Link a root key later with Edit. Linking it activates the Domain Key.
+              </span>
+            )}
+            {dkEditing && keyLifecycle(dkEditing) === 'PreActive' && (
+              <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
+                Linking a root key activates this Domain Key, then the keys below it.
+              </span>
+            )}
+            {dkRootKeyLocked && (
+              <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
+                The root key of a linked Domain Key cannot be changed yet.
               </span>
             )}
           </FlexBox>

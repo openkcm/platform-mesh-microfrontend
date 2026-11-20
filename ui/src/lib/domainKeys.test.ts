@@ -4,6 +4,7 @@ import type { DomainKey, DomainKeyScope, ServiceKey } from '../types';
 import {
   domainKeyScope,
   instanceDomainKeys,
+  isRootKeyLinked,
   linkedRootKeyRef,
   mintableDomainKeys,
   namespaceDomainKey,
@@ -280,4 +281,28 @@ it('offers one Namespace DomainKey per namespace for the account page', () => {
   const second={...first,metadata:{...first.metadata,namespace:'team-b'}};
   const duplicate=domainKey('duplicate','Namespace','2026-09-02T00:00:00Z');
   expect(mintableDomainKeys([first,second,duplicate],[])).toEqual([first,second]);
+});
+
+describe('isRootKeyLinked', () => {
+  const withLink = (status: string, reason: string) => {
+    const dk = domainKey('orders', 'Instance', '2026-09-01T00:00:00Z', 'PreActive');
+    dk.status = { ...dk.status, conditions: [{ type: 'RootKeyLinked', status, reason }] };
+    return dk;
+  };
+
+  it('is true once the controller has recorded the link', () => {
+    // when / then
+    expect(isRootKeyLinked(withLink('True', 'Linked'))).toBe(true);
+  });
+
+  it('is false while there is no recorded link', () => {
+    // given
+    const none = domainKey('orders', 'Instance', '2026-09-01T00:00:00Z', 'PreActive');
+
+    // when
+    const results = [none, withLink('False', 'Unlinked'), withLink('True', 'Other')].map(isRootKeyLinked);
+
+    // then
+    expect(results).toEqual([false, false, false]);
+  });
 });

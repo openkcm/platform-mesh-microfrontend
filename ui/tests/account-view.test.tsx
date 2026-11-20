@@ -37,11 +37,11 @@ vi.mock('@ui5/webcomponents-react', () => {
   const box = ({children}: any) => <div>{children}</div>;
   return {
     FlexBox:box, Card:box, Bar:({children,endContent}:any)=><div>{children}{endContent}</div>,
-    Button:({children,onClick,disabled,tooltip}:any)=><button disabled={disabled} onClick={onClick} aria-label={tooltip}>{children || tooltip}</button>,
+    Button:({children,onClick,disabled,tooltip,className}:any)=><button disabled={disabled} onClick={onClick} aria-label={tooltip} className={className}>{children || tooltip}</button>,
     Dialog:({open,children,footer,headerText}:any)=>open?<div role="dialog"><h2>{headerText}</h2>{children}{footer}</div>:null,
     CardHeader:({titleText}:any)=><h3>{titleText}</h3>, Title:box, Label:({children,for:id}:any)=><label htmlFor={id}>{children}</label>,
     MessageStrip:box, ObjectStatus:box, Toast:({open,children}:any)=>open?<div>{children}</div>:null,
-    Popover:()=>null, Icon:()=>null, BusyIndicator:()=>null,
+    Popover:({open,children}:any)=>open?<div data-popover>{children}</div>:null, Icon:()=>null, BusyIndicator:()=>null,
     IllustratedMessage:({titleText}:any)=><div>{titleText}</div>,
     Input:({value,onInput,id,readonly}:any)=><input id={id} value={value} readOnly={readonly} onChange={onInput}/>,
     Select:({children,onChange,disabled}:any)=><select disabled={disabled} value={(Children.toArray(children).find((child:any)=>child.props.selected) as any)?.props['data-value'] ?? ''} onChange={event=>onChange?.({detail:{selectedOption:event.target.selectedOptions[0]}})}>{children}</select>,
@@ -203,19 +203,71 @@ it('does not repeat the selected namespace on Domain Key cards', async () => {
   expect(screen.queryByText(/^Namespace:/)).toBeNull();
 });
 
-it('keeps the actions of a System key outside all namespaces, disabled with the reason', async () => {
+it('greys the actions of a System key outside all namespaces and puts the reason beside them', async () => {
   listByNamespace({'default': [systemKey('shared')], 'team-a': [key('team-a', 'team-key')]});
   render(<App/>); change(context('a', 'team-a'));
   const card = (await screen.findByText('shared', {selector: '.key-name'})).closest('.key-card-content') as HTMLElement;
-  expect(within(card).getByText('Scope: System · Managed in all namespaces')).toBeTruthy();
+  expect(within(card).getByText('Scope: System')).toBeTruthy();
   const actions =
     within(card).getAllByLabelText('To change a System key, select all namespaces.') as HTMLButtonElement[];
   expect(actions).toHaveLength(3);
-  expect(actions.every((button) => button.disabled)).toBe(true);
+  expect(actions.every((button) => button.classList.contains('locked-action'))).toBe(true);
   expect(within(card).getByText('Deactivate', {selector: 'button'})).toBe(actions[0]);
+  expect(card.querySelector('.key-card-header .key-note')?.textContent)
+    .toBe('To change a System key, select all namespaces.');
+  expect(card.querySelector('.key-card-body .key-note')).toBeNull();
   const own =
     (await screen.findByText('team-key', {selector: '.key-name'})).closest('.key-card-content') as HTMLElement;
-  expect((within(own).getByLabelText('Delete Domain Key') as HTMLButtonElement).disabled).toBe(false);
+  const ownDelete = within(own).getByLabelText('Delete Domain Key') as HTMLButtonElement;
+  expect(ownDelete.disabled).toBe(false);
+  expect(ownDelete.classList.contains('locked-action')).toBe(false);
+  expect(own.querySelector('.key-note')).toBeNull();
+});
+
+it('keeps the actions of a System key clickable and answers a click with what to do instead', async () => {
+  listByNamespace({'default': [systemKey('shared')], 'team-a': [key('team-a', 'team-key')]});
+  render(<App/>); change(context('a', 'team-a'));
+  const card = (await screen.findByText('shared', {selector: '.key-name'})).closest('.key-card-content') as HTMLElement;
+  const actions =
+    within(card).getAllByLabelText('To change a System key, select all namespaces.') as HTMLButtonElement[];
+  expect(document.querySelector('[data-popover]')).toBeNull();
+  for (const [button, verb] of [[actions[0], 'deactivate'], [actions[1], 'edit'], [actions[2], 'delete']] as const) {
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(document.querySelector('[data-popover]')?.textContent).toBe(`To ${verb} a System key, select all namespaces.`);
+  }
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(api.remove).not.toHaveBeenCalled();
+});
+
+it('shows no read-only note on a System key while all namespaces are selected', async () => {
+  api.all.mockResolvedValue(snapshot([systemKey('shared')]));
+  render(<App/>); change(context('a'));
+  const card = (await screen.findByText('shared', {selector: '.key-name'})).closest('.key-card-content') as HTMLElement;
+  expect(within(card).getByText('Scope: System')).toBeTruthy();
+  expect(card.querySelector('.key-note')).toBeNull();
+  const edit = within(card).getByLabelText('Edit Domain Key') as HTMLButtonElement;
+  expect(edit.disabled).toBe(false);
+  expect(edit.classList.contains('locked-action')).toBe(false);
+  fireEvent.click(edit);
+  expect(document.querySelector('[data-popover]')).toBeNull();
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+it('shows no Key ID on any card', async () => {
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([
+    {...key('team-a', 'domain-key'), status: {cryptoState: {lifecycleState: 'Active', id: 'dk-id-0001'}}}
+  ]));
+  api.services.mockResolvedValue(snapshot([{
+    metadata: {name: 'service-key', namespace: 'team-a'}, spec: {domainKeyRef: 'domain-key', lifecycle: 'Active'},
+    status: {cryptoState: {lifecycleState: 'Active', id: 'sk-id-0001'}}
+  }]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('service-key', {selector: '.key-name'});
+  expect(screen.queryByText('Key ID')).toBeNull();
+  expect(screen.queryByText('dk-id-0001')).toBeNull();
+  expect(screen.queryByText('sk-id-0001')).toBeNull();
 });
 
 it('does not name the account namespace on a Service Key', async () => {
@@ -463,6 +515,50 @@ it('lets Edit link a root key to a DomainKey', async () => {
   await waitFor(()=>expect(api.linkRoot).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({namespace:'team-a',name:'dk',rootKey:{kind:'AWSRootKey',namespace:'default',name:'aws'}})));
 });
 
+const awsRef = {apiGroup:'operations.openkcm.io',kind:'AWSRootKey',namespace:'default',name:'aws'};
+const linkedKey = (name: string, conditions: any[]) => ({...key('team-a',name),
+  spec:{...key('team-a').spec,primaryRootKeyRef:awsRef},
+  status:{cryptoState:{lifecycleState:'Active'},conditions}});
+const recordedLink = {type:'RootKeyLinked',status:'True',reason:'Linked'};
+const lockHint = 'The root key of a linked Domain Key cannot be changed yet.';
+
+it('locks the root key of a linked Domain Key in Edit', async () => {
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([linkedKey('dk',[recordedLink])]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('dk',{selector:'.key-name'});
+  fireEvent.click(screen.getByLabelText('Edit Domain Key'));
+  const dialog=screen.getByRole('dialog');
+  expect(parentRoot(dialog).disabled).toBe(true);
+  expect(within(dialog).getByText(lockHint)).toBeTruthy();
+  expect((within(dialog).getByText('Save',{selector:'button'}) as HTMLButtonElement).disabled).toBe(true);
+  expect(api.linkRoot).not.toHaveBeenCalled();
+  expect(api.unlinkRoot).not.toHaveBeenCalled();
+});
+
+it('lets Edit pick another root key while the link is not recorded, for example after a failed link', async () => {
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([linkedKey('dk',[{type:'Ready',status:'False',reason:'LinkFailed'}])]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('dk',{selector:'.key-name'});
+  fireEvent.click(screen.getByLabelText('Edit Domain Key'));
+  const dialog=screen.getByRole('dialog');
+  expect(parentRoot(dialog).disabled).toBe(false);
+  expect(within(dialog).queryByText(lockHint)).toBeNull();
+  expect((within(dialog).getByText('Save',{selector:'button'}) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('says on the card when the controller refused a root key change, and nothing otherwise', async () => {
+  const refused={type:'RootKeyChangeSupported',status:'False',reason:'Unsupported'};
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([linkedKey('refused',[recordedLink,refused]),linkedKey('plain',[recordedLink])]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('plain',{selector:'.key-name'});
+  expect(screen.getAllByText(
+    'The root key of a linked Domain Key cannot be changed yet. It still uses the Root Key it was linked to.'
+  )).toHaveLength(1);
+});
+
 it.each(['Instance','Namespace'])('shows the scope of a %s Domain Key in Edit as a locked switch', async (scope) => {
   api.all.mockResolvedValue(snapshot([{...key('team-a','dk'),spec:{...key('team-a').spec,scope}}]));
   render(<App/>); change(context('a'));
@@ -513,10 +609,42 @@ it('explains why Parent Root Key is disabled when creating a Domain Key, and not
   render(<App/>); change(context('a'));
   await screen.findByText('dk',{selector:'.key-name'});
   const create=openCreateDomainKey();
-  expect(within(create).getByText('Link a root key later with Edit.')).toBeTruthy();
+  expect(within(create).getByText('Link a root key later with Edit. Linking it activates the Domain Key.')).toBeTruthy();
   fireEvent.click(within(create).getByText('Cancel',{selector:'button'}));
   fireEvent.click(screen.getByLabelText('Edit Domain Key'));
-  expect(within(screen.getByRole('dialog')).queryByText('Link a root key later with Edit.')).toBeNull();
+  expect(within(screen.getByRole('dialog')).queryByText(/Link a root key later with Edit/)).toBeNull();
+});
+
+it('tells in Edit that linking activates a Domain Key that is not active yet, and not for an active one', async () => {
+  const pending={...key('team-a','pending'),status:{cryptoState:{lifecycleState:'PreActive'}}};
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([pending]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('pending',{selector:'.key-name'});
+  fireEvent.click(screen.getByLabelText('Edit Domain Key'));
+  expect(within(screen.getByRole('dialog')).getByText('Linking a root key activates this Domain Key, then the keys below it.')).toBeTruthy();
+  cleanup();
+  api.all.mockResolvedValue(snapshot([key('team-a','active')]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('active',{selector:'.key-name'});
+  fireEvent.click(screen.getByLabelText('Edit Domain Key'));
+  expect(within(screen.getByRole('dialog')).queryByText(/activates this Domain Key/)).toBeNull();
+});
+
+it('says on the card whether a Domain Key still needs a link or is being activated', async () => {
+  const unconfigured={status:'False',reason:'Unconfigured',type:'Ready'};
+  const unlinked={...key('team-a','unlinked'),status:{cryptoState:{lifecycleState:'PreActive'},conditions:[unconfigured]}};
+  const linked={...key('team-a','linked'),spec:{...key('team-a').spec,primaryRootKeyRef:{apiGroup:'operations.openkcm.io',kind:'AWSRootKey',namespace:'default',name:'aws'}},
+    status:{cryptoState:{lifecycleState:'PreActive'},conditions:[unconfigured]}};
+  const activating={...linked,metadata:{...linked.metadata,name:'activating'},
+    status:{cryptoState:{lifecycleState:'PreActive'},conditions:[{status:'False',reason:'Activating',type:'Ready'}]}};
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([unlinked,linked,activating]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('activating',{selector:'.key-name'});
+  expect(screen.getByText('This Domain Key is not linked to a Root Key yet. Link one with Edit to activate it.')).toBeTruthy();
+  expect(screen.getAllByText('This Domain Key is linked to its Root Key and is being activated. This usually takes a few moments.')).toHaveLength(2);
+  expect(screen.queryByText(/Something went wrong|contact your administrator/)).toBeNull();
 });
 
 it.each([
@@ -729,6 +857,17 @@ it('blocks deleting a root key that a Domain Key uses', async () => {
   expect(api.removeRoot).not.toHaveBeenCalled();
 });
 
+it('asks to delete, not unlink, the Domain Keys that hold a recorded link to a root key', async () => {
+  api.roots.mockResolvedValue([rootFixture]);
+  api.all.mockResolvedValue(snapshot([{...key('team-a','child'),
+    spec:{tenantNameRef:'a',primaryRootKeyRef:{kind:'AWSRootKey',name:'aws-eu',namespace:'default'}},
+    status:{cryptoState:{lifecycleState:'Active'},conditions:[recordedLink]}}]));
+  render(<App/>); change({...context('a'),viewLevel:'account'});
+  fireEvent.click(await screen.findByLabelText('Delete Root Key'));
+  expect(screen.getByText('aws-eu is linked to 1 Domain Key. Delete it first.')).toBeTruthy();
+  expect(dialogButton('Delete').disabled).toBe(true);
+});
+
 it('shows a root key as the customer data only, without status or lifecycle actions', async () => {
   const arn = 'arn:aws:kms:eu-central-1:000000000000:key/abc';
   api.roots.mockResolvedValue([{...rootFixture,spec:{...rootFixture.spec,region:'eu-central-1',keyUri:arn},
@@ -935,7 +1074,7 @@ it('gives every Domain Key card the same View details link and nothing else in i
   for (const name of ['shared', 'team-key']) {
     const facts = (await card(name)).querySelector('.key-facts') as HTMLElement;
     expect([...facts.children].map((child) => child.textContent))
-      .toEqual([expect.stringContaining('Key ID'), expect.stringContaining('Parent Root Key'), 'View details']);
+      .toEqual([expect.stringContaining('Parent Root Key'), 'View details']);
   }
   fireEvent.click(within(await card('shared')).getByText('View details'));
   expect(api.navigate).toHaveBeenCalledWith('shared', 'default', expect.any(AbortSignal));
@@ -957,15 +1096,17 @@ it('shows the details page with the Root Key and every Service Key across namesp
   expect(screen.getByText('Domain Key · Scope: System')).toBeTruthy();
   const summary = document.querySelector('.detail-list') as HTMLElement;
   expect([...summary.querySelectorAll('dt')].map((dt) => dt.textContent))
-    .toEqual(['Parent Root Key', 'Key ID', 'Version', 'Last rotated', 'Created']);
+    .toEqual(['Parent Root Key', 'Version', 'Last rotated', 'Created']);
+  expect([...document.querySelectorAll('.detail-table th')].map((th) => th.textContent))
+    .toEqual(['Name', 'Namespace', 'Status', 'Data Keys']);
   expect(within(summary).getByText('aws')).toBeTruthy();
   expect(api.all).toHaveBeenCalled();
   expect(api.list).not.toHaveBeenCalled();
   const rows = [...document.querySelectorAll('.detail-table tbody tr')]
     .map((row) => [...row.querySelectorAll('td')].slice(0, 2).map((cell) => cell.textContent));
   expect(rows).toEqual([['sk-0', 'Account'], ['sk-a', 'team-a'], ['sk-b', 'team-b']]);
-  expect(screen.getByText('id-a')).toBeTruthy();
-  expect(screen.getByText('5f3c2a1b…07e9a2').getAttribute('title')).toBe('5f3c2a1b-8d4e-4c1a-9b2f-3a6d8c07e9a2');
+  expect(screen.queryByText('id-a')).toBeNull();
+  expect(screen.queryByText('5f3c2a1b…07e9a2')).toBeNull();
   expect(document.querySelector('.key-card')).toBeNull();
   expect(screen.queryByLabelText('Delete Root Key')).toBeNull();
   expect(screen.queryByText('Deactivate', {selector: 'button'})).toBeNull();

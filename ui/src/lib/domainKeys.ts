@@ -9,6 +9,11 @@ export const scopeLabel = (dk: DomainKey): string => `Scope: ${domainKeyScope(dk
 export const linkedRootKeyRef = (dk: DomainKey): TypedReference | undefined =>
   dk.spec.primaryRootKeyRef?.name ? dk.spec.primaryRootKeyRef : undefined;
 
+// The controller does not change the root key once the link is recorded, so neither does the UI.
+export const isRootKeyLinked = (dk: DomainKey): boolean =>
+  Boolean(dk.status?.conditions?.some((c) =>
+    c.type === 'RootKeyLinked' && c.status === 'True' && c.reason === 'Linked'));
+
 const isActive = (dk: DomainKey) => keyLifecycle(dk) === 'Active';
 
 type Named = { metadata: { name: string; creationTimestamp?: string } };
