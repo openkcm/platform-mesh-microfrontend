@@ -515,6 +515,50 @@ it('lets Edit link a root key to a DomainKey', async () => {
   await waitFor(()=>expect(api.linkRoot).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({namespace:'team-a',name:'dk',rootKey:{kind:'AWSRootKey',namespace:'default',name:'aws'}})));
 });
 
+const awsRef = {apiGroup:'operations.openkcm.io',kind:'AWSRootKey',namespace:'default',name:'aws'};
+const linkedKey = (name: string, conditions: any[]) => ({...key('team-a',name),
+  spec:{...key('team-a').spec,primaryRootKeyRef:awsRef},
+  status:{cryptoState:{lifecycleState:'Active'},conditions}});
+const recordedLink = {type:'RootKeyLinked',status:'True',reason:'Linked'};
+const lockHint = 'The root key of a linked Domain Key cannot be changed yet.';
+
+it('locks the root key of a linked Domain Key in Edit', async () => {
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([linkedKey('dk',[recordedLink])]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('dk',{selector:'.key-name'});
+  fireEvent.click(screen.getByLabelText('Edit Domain Key'));
+  const dialog=screen.getByRole('dialog');
+  expect(parentRoot(dialog).disabled).toBe(true);
+  expect(within(dialog).getByText(lockHint)).toBeTruthy();
+  expect((within(dialog).getByText('Save',{selector:'button'}) as HTMLButtonElement).disabled).toBe(true);
+  expect(api.linkRoot).not.toHaveBeenCalled();
+  expect(api.unlinkRoot).not.toHaveBeenCalled();
+});
+
+it('lets Edit pick another root key while the link is not recorded, for example after a failed link', async () => {
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([linkedKey('dk',[{type:'Ready',status:'False',reason:'LinkFailed'}])]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('dk',{selector:'.key-name'});
+  fireEvent.click(screen.getByLabelText('Edit Domain Key'));
+  const dialog=screen.getByRole('dialog');
+  expect(parentRoot(dialog).disabled).toBe(false);
+  expect(within(dialog).queryByText(lockHint)).toBeNull();
+  expect((within(dialog).getByText('Save',{selector:'button'}) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('says on the card when the controller refused a root key change, and nothing otherwise', async () => {
+  const refused={type:'RootKeyChangeSupported',status:'False',reason:'Unsupported'};
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([linkedKey('refused',[recordedLink,refused]),linkedKey('plain',[recordedLink])]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('plain',{selector:'.key-name'});
+  expect(screen.getAllByText(
+    'The root key of a linked Domain Key cannot be changed yet. It still uses the Root Key it was linked to.'
+  )).toHaveLength(1);
+});
+
 it.each(['Instance','Namespace'])('shows the scope of a %s Domain Key in Edit as a locked switch', async (scope) => {
   api.all.mockResolvedValue(snapshot([{...key('team-a','dk'),spec:{...key('team-a').spec,scope}}]));
   render(<App/>); change(context('a'));
@@ -811,6 +855,17 @@ it('blocks deleting a root key that a Domain Key uses', async () => {
   expect(screen.getByText('aws-eu is linked to 1 Domain Key. Unlink or delete it first.')).toBeTruthy();
   expect(dialogButton('Delete').disabled).toBe(true);
   expect(api.removeRoot).not.toHaveBeenCalled();
+});
+
+it('asks to delete, not unlink, the Domain Keys that hold a recorded link to a root key', async () => {
+  api.roots.mockResolvedValue([rootFixture]);
+  api.all.mockResolvedValue(snapshot([{...key('team-a','child'),
+    spec:{tenantNameRef:'a',primaryRootKeyRef:{kind:'AWSRootKey',name:'aws-eu',namespace:'default'}},
+    status:{cryptoState:{lifecycleState:'Active'},conditions:[recordedLink]}}]));
+  render(<App/>); change({...context('a'),viewLevel:'account'});
+  fireEvent.click(await screen.findByLabelText('Delete Root Key'));
+  expect(screen.getByText('aws-eu is linked to 1 Domain Key. Delete it first.')).toBeTruthy();
+  expect(dialogButton('Delete').disabled).toBe(true);
 });
 
 it('shows a root key as the customer data only, without status or lifecycle actions', async () => {

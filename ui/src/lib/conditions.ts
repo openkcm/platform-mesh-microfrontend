@@ -104,3 +104,11 @@ export const readyProblem = (ready: ReadyCondition | undefined, context: Problem
     ? { design: wording.design, text: wording.text(context) }
     : { design: 'Critical', text: fallback(context) };
 };
+
+export const rootKeyChangeProblem = (change: ReadyCondition | undefined): Problem | null =>
+  change?.status === 'False'
+    ? {
+        design: 'Critical',
+        text: 'The root key of a linked Domain Key cannot be changed yet. It still uses the Root Key it was linked to.'
+      }
+    : null;

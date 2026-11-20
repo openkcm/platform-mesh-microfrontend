@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Condition } from '../types';
-import { readyProblem } from './conditions';
+import { readyProblem, rootKeyChangeProblem } from './conditions';
 
 const LEAK = 'dial tcp 10.0.3.7:8080: connect: connection refused arn:aws:kms:eu-central-1:123456789012:key/abc';
 
@@ -173,5 +173,24 @@ describe('readyProblem', () => {
     expect(unknown).toEqual(generic);
     expect(missing).toEqual(generic);
     expect(inherited).toEqual(generic);
+  });
+});
+
+describe('rootKeyChangeProblem', () => {
+  it('explains a refused root key change as a notice', () => {
+    // when
+    const problem = rootKeyChangeProblem({ status: 'False', reason: 'Unsupported' });
+
+    // then
+    expect(problem).toEqual({
+      design: 'Critical',
+      text: 'The root key of a linked Domain Key cannot be changed yet. It still uses the Root Key it was linked to.'
+    });
+  });
+
+  it('reports nothing when the change is not refused', () => {
+    // when / then
+    expect(rootKeyChangeProblem(undefined)).toBeNull();
+    expect(rootKeyChangeProblem({ status: 'True', reason: 'Supported' })).toBeNull();
   });
 });
