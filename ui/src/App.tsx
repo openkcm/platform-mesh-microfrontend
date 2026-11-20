@@ -757,6 +757,10 @@ const ServiceKeyCard = ({
                     </>
                   }
                 />
+                <ProblemStrip
+                  ready={conditionByType(dek.status?.conditions, 'Ready')}
+                  context={{ kind: 'Data Key' }}
+                />
               </div>
             );
           })
@@ -1056,7 +1060,7 @@ const DomainKeyCard = ({
     >
       <ProblemStrip
         ready={conditionByType(domainKey.status?.conditions, 'Ready')}
-        context={{ kind: 'Domain Key' }}
+        context={{ kind: 'Domain Key', linked: Boolean(primary) }}
       />
       <div className="key-facts">
         <Fact area="id" label="Key ID">
@@ -1178,7 +1182,7 @@ const DomainKeyDetails = ({
       </div>
       <ProblemStrip
         ready={conditionByType(domainKey.status?.conditions, 'Ready')}
-        context={{ kind: 'Domain Key' }}
+        context={{ kind: 'Domain Key', linked: Boolean(primary) }}
       />
       <dl className="detail-panel detail-list">
         <dt>Parent Root Key</dt>
@@ -2627,7 +2631,12 @@ const App = () => {
             </Select>
             {!dkEditing && (
               <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
-                Link a root key later with Edit.
+                Link a root key later with Edit. Linking it activates the Domain Key.
+              </span>
+            )}
+            {dkEditing && keyLifecycle(dkEditing) === 'PreActive' && (
+              <span style={{ fontSize: '0.7rem', color: 'var(--sapContent_LabelColor)' }}>
+                Linking a root key activates this Domain Key, then the keys below it.
               </span>
             )}
           </FlexBox>

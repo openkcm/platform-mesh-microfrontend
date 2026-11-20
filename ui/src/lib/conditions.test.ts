@@ -23,6 +23,13 @@ describe('readyProblem', () => {
       'TenantResolutionFailed',
       'Deactivated',
       'DomainKeyNotActive',
+      'ServiceKeyNotActive',
+      'Unconfigured',
+      'AwaitingRootKeyActivation',
+      'Activating',
+      'LinkFailed',
+      'KeyProcessingFailed',
+      'RootKeyProcessingFailed',
       'ProviderUnsupported',
       'CredentialsPending',
       'CredentialsInvalid',
@@ -60,7 +67,85 @@ describe('readyProblem', () => {
     const problem = readyProblem(ready('DomainKeyNotActive'), { kind: 'Service Key' });
 
     // then
-    expect(problem).toEqual({ design: 'Critical', text: 'Waiting for the Domain Key it uses to become active.' });
+    expect(problem).toEqual({
+      design: 'Critical',
+      text: 'Waiting for the Domain Key it uses to become active. ' +
+        'This Service Key is activated automatically after that.'
+    });
+  });
+
+  it('tells a Data Key that it waits for its Service Key', () => {
+    // when
+    const problem = readyProblem(ready('ServiceKeyNotActive'), { kind: 'Data Key' });
+
+    // then
+    expect(problem).toEqual({
+      design: 'Critical',
+      text: 'Waiting for the Service Key it uses to become active. ' +
+        'This Data Key is activated automatically after that.'
+    });
+  });
+
+  it('tells whether an unconfigured key still needs a link or is being activated', () => {
+    // when
+    const unlinked = readyProblem(ready('Unconfigured'), { ...domainKey, linked: false });
+    const linked = readyProblem(ready('Unconfigured'), { ...domainKey, linked: true });
+    const unknown = readyProblem(ready('Unconfigured'), domainKey);
+
+    // then
+    expect(unlinked).toEqual({
+      design: 'Critical',
+      text: 'This Domain Key is not linked to a Root Key yet. Link one with Edit to activate it.'
+    });
+    expect(linked).toEqual({
+      design: 'Critical',
+      text: 'This Domain Key is linked to its Root Key and is being activated. This usually takes a few moments.'
+    });
+    expect(unknown?.text).toBe('This Domain Key is not connected to a key provider yet.');
+  });
+
+  it('shows the activation after a link as a notice, not as an error', () => {
+    // when
+    const problems = ['AwaitingRootKeyActivation', 'Activating'].map((reason) => readyProblem(ready(reason), domainKey));
+
+    // then
+    for (const problem of problems) {
+      expect(problem).toEqual({
+        design: 'Critical',
+        text: 'This Domain Key is linked to its Root Key and is being activated. This usually takes a few moments.'
+      });
+    }
+  });
+
+  it('has its own wording for every reason the controller sets on a key that is not ready', () => {
+    // given
+    const reasons = [
+      'Processing', 'AwaitingTenant', 'Unconfigured', 'AwaitingRootKeyActivation', 'Activating', 'Deactivated',
+      'DomainKeyNotActive', 'DomainKeyNotFound', 'DomainKeyInUse', 'DomainKeyNamespaceNotAllowed',
+      'DomainKeyNotShared', 'DomainKeyLimitExceeded', 'ServiceKeyNotActive', 'ServiceKeyNotFound',
+      'RootKeyResolutionFailed', 'CredentialsPending', 'CredentialsInvalid', 'CredentialsForbidden',
+      'ProviderUnsupported', 'LinkFailed', 'TenantResolutionFailed', 'KeyCreateFailed', 'DEKCreateFailed',
+      'DomainKeyCreateFailed', 'ServiceKeyCreateFailed', 'KeyProcessingFailed', 'RootKeyProcessingFailed',
+      'LifecycleTransitionFailed'
+    ];
+
+    // when
+    const generic = reasons.filter((reason) => readyProblem(ready(reason), domainKey)?.text.startsWith('Something went wrong'));
+
+    // then
+    expect(generic).toEqual([]);
+  });
+
+  it('words a failed link as a failure with a retry hint', () => {
+    // when
+    const problem = readyProblem(ready('LinkFailed'), domainKey);
+
+    // then
+    expect(problem).toEqual({
+      design: 'Negative',
+      text: 'This Domain Key could not be linked to its Root Key. ' +
+        'Try again in a few minutes. If it keeps failing, contact your administrator.'
+    });
   });
 
   it('says a key is deactivated, and why when its parent is not active', () => {

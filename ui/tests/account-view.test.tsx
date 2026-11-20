@@ -513,10 +513,42 @@ it('explains why Parent Root Key is disabled when creating a Domain Key, and not
   render(<App/>); change(context('a'));
   await screen.findByText('dk',{selector:'.key-name'});
   const create=openCreateDomainKey();
-  expect(within(create).getByText('Link a root key later with Edit.')).toBeTruthy();
+  expect(within(create).getByText('Link a root key later with Edit. Linking it activates the Domain Key.')).toBeTruthy();
   fireEvent.click(within(create).getByText('Cancel',{selector:'button'}));
   fireEvent.click(screen.getByLabelText('Edit Domain Key'));
-  expect(within(screen.getByRole('dialog')).queryByText('Link a root key later with Edit.')).toBeNull();
+  expect(within(screen.getByRole('dialog')).queryByText(/Link a root key later with Edit/)).toBeNull();
+});
+
+it('tells in Edit that linking activates a Domain Key that is not active yet, and not for an active one', async () => {
+  const pending={...key('team-a','pending'),status:{cryptoState:{lifecycleState:'PreActive'}}};
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([pending]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('pending',{selector:'.key-name'});
+  fireEvent.click(screen.getByLabelText('Edit Domain Key'));
+  expect(within(screen.getByRole('dialog')).getByText('Linking a root key activates this Domain Key, then the keys below it.')).toBeTruthy();
+  cleanup();
+  api.all.mockResolvedValue(snapshot([key('team-a','active')]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('active',{selector:'.key-name'});
+  fireEvent.click(screen.getByLabelText('Edit Domain Key'));
+  expect(within(screen.getByRole('dialog')).queryByText(/activates this Domain Key/)).toBeNull();
+});
+
+it('says on the card whether a Domain Key still needs a link or is being activated', async () => {
+  const unconfigured={status:'False',reason:'Unconfigured',type:'Ready'};
+  const unlinked={...key('team-a','unlinked'),status:{cryptoState:{lifecycleState:'PreActive'},conditions:[unconfigured]}};
+  const linked={...key('team-a','linked'),spec:{...key('team-a').spec,primaryRootKeyRef:{apiGroup:'operations.openkcm.io',kind:'AWSRootKey',namespace:'default',name:'aws'}},
+    status:{cryptoState:{lifecycleState:'PreActive'},conditions:[unconfigured]}};
+  const activating={...linked,metadata:{...linked.metadata,name:'activating'},
+    status:{cryptoState:{lifecycleState:'PreActive'},conditions:[{status:'False',reason:'Activating',type:'Ready'}]}};
+  api.roots.mockResolvedValue([activeRoot]);
+  api.all.mockResolvedValue(snapshot([unlinked,linked,activating]));
+  render(<App/>); change(context('a'));
+  await screen.findByText('activating',{selector:'.key-name'});
+  expect(screen.getByText('This Domain Key is not linked to a Root Key yet. Link one with Edit to activate it.')).toBeTruthy();
+  expect(screen.getAllByText('This Domain Key is linked to its Root Key and is being activated. This usually takes a few moments.')).toHaveLength(2);
+  expect(screen.queryByText(/Something went wrong|contact your administrator/)).toBeNull();
 });
 
 it.each([
