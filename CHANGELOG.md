@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.0 (2026-11-20)
+
+## What's Changed
+* feat: clearer key cards and a locked root key once a Domain Key is linked by @ykld-work in https://github.com/openkcm/platform-mesh-microfrontend/pull/42
+
+
+**Full Changelog**: https://github.com/openkcm/platform-mesh-microfrontend/compare/v0.16.0...v0.17.0
+
 ## 0.16.0 (2026-11-17)
 
 ## What's Changed
