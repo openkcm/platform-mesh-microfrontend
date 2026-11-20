@@ -36,6 +36,8 @@ import '@ui5/webcomponents-icons/dist/expand-all.js';
 import '@ui5/webcomponents-icons/dist/accept.js';
 import '@ui5/webcomponents-icons/dist/decline.js';
 import '@ui5/webcomponents-icons/dist/edit.js';
+import '@ui5/webcomponents-icons/dist/locked.js';
+import '@ui5/webcomponents-icons/dist/message-warning.js';
 import '@ui5/webcomponents-icons/dist/copy.js';
 import '@ui5/webcomponents-icons/dist/broken-link.js';
 import '@ui5/webcomponents-icons/dist/slim-arrow-down.js';
@@ -507,7 +509,7 @@ const CopyableId = ({ id, full }: { id?: string; full?: boolean }) => {
   );
 };
 
-type FactArea = 'id' | 'parent' | 'child';
+type FactArea = 'primary' | 'child';
 
 const Fact = ({ area, label, children }: { area: FactArea; label: string; children: React.ReactNode }) => (
   <div className={`key-fact key-fact-${area}`}>
@@ -530,27 +532,33 @@ const MissingRef = ({ name }: { name: string }) => (
   <Truncate text={`${name} is missing`} style={{ color: 'var(--sapNegativeTextColor)' }} />
 );
 
+type ClickTarget = { currentTarget: HTMLElement | null };
+
 const LifecycleToggle = ({
   lifecycle,
   busyAction,
   blockedReason,
-  disabledReason,
+  lockedReason,
+  onLocked,
   onToggle
 }: {
   lifecycle: string;
   busyAction: BusyActionKind;
   blockedReason?: string;
-  disabledReason?: string;
+  lockedReason?: string;
+  onLocked?: (event: ClickTarget) => void;
   onToggle: () => void;
 }) => {
   const label = lifecycleActionLabel(lifecycle);
   if (!label) return null;
-  const reason = disabledReason ?? (label === 'Activate' ? blockedReason : undefined);
+  const locked = Boolean(lockedReason);
+  const reason = lockedReason ?? (label === 'Activate' ? blockedReason : undefined);
   return (
     <Button
       design={label === 'Activate' && !reason ? 'Emphasized' : 'Default'}
-      disabled={busyAction !== null || Boolean(reason)}
-      onClick={onToggle}
+      className={locked ? 'locked-action' : undefined}
+      disabled={busyAction !== null || (Boolean(reason) && !locked)}
+      onClick={locked ? onLocked : onToggle}
       tooltip={reason}
     >
       {busyAction === 'lifecycle' ? '…' : label}
@@ -589,15 +597,24 @@ const KeyHeader = ({
   </div>
 );
 
+const KeyNote = ({ children }: { children: React.ReactNode }) => (
+  <div className="key-note">
+    <Icon name="locked" />
+    <span>{children}</span>
+  </div>
+);
+
 const KeyCard = ({
   tier,
+  note,
   children,
   ...header
-}: React.ComponentProps<typeof KeyHeader> & { tier: Tier; children?: React.ReactNode }) => (
+}: React.ComponentProps<typeof KeyHeader> & { tier: Tier; note?: string; children?: React.ReactNode }) => (
   <Card data-tier={tier} className="key-card">
     <div className="key-card-content">
       <div className="key-card-header">
         <KeyHeader {...header} />
+        {note && <KeyNote>{note}</KeyNote>}
       </div>
       {children && <div className="key-card-body">{children}</div>}
     </div>
@@ -697,10 +714,7 @@ const ServiceKeyCard = ({
         context={{ kind: 'Service Key', inactiveParent: blockingParent(sk, parentActive, 'Domain Key') }}
       />
       <div className="key-facts">
-        <Fact area="id" label="Key ID">
-          <CopyableId id={sk.status?.cryptoState?.id} />
-        </Fact>
-        <Fact area="parent" label="Parent Domain Key">
+        <Fact area="primary" label="Parent Domain Key">
           {parent ? (
             <KeyRef lead={<TierBadge tier="L2" />} name={parent.metadata.name} detail={scopeLabel(parent)} />
           ) : (
@@ -932,7 +946,7 @@ const RootKeyCard = ({
       }
     >
       <div className="key-facts">
-        {keyUri && <Fact area="id" label="Key ARN"><CopyableId id={keyUri} /></Fact>}
+        {keyUri && <Fact area="primary" label="Key ARN"><CopyableId id={keyUri} /></Fact>}
         <Button
           className="key-details-link"
           design="Transparent"
@@ -1022,6 +1036,10 @@ const DomainKeyCard = ({
 }) => {
   const lifecycle = keyLifecycle(domainKey);
   const locked = busyAction !== null || isDeleting(domainKey);
+  const [explained, setExplained] = useState<{ opener: HTMLElement; verb: string } | null>(null);
+  const explain = (verb: string) => (event: ClickTarget) => {
+    if (event.currentTarget) setExplained({ opener: event.currentTarget, verb });
+  };
   const primary = linkedRootKeyRef(domainKey);
   const primaryRk = findLinkedRootKey(domainKey, rootKeys, namespace, accountNamespace);
 
@@ -1030,43 +1048,55 @@ const DomainKeyCard = ({
       tier="L2"
       lead={<TierBadge tier="L2" />}
       name={domainKey.metadata.name}
-      subtitle={readOnly ? `${scopeLabel(domainKey)} · Managed in all namespaces` : scopeLabel(domainKey)}
+      subtitle={scopeLabel(domainKey)}
       namespaceLabel={namespaceLabel}
       lifecycle={lifecycle}
+      note={readOnly ? SYSTEM_KEY_HINT : undefined}
       actions={
         <>
           <LifecycleToggle
             lifecycle={lifecycle}
             busyAction={busyAction}
-            disabledReason={readOnly ? SYSTEM_KEY_HINT : undefined}
+            lockedReason={readOnly ? SYSTEM_KEY_HINT : undefined}
+            onLocked={explain((lifecycleActionLabel(lifecycle) ?? 'change').toLowerCase())}
             onToggle={onLifecycleToggleDk}
           />
           <Button
             design="Transparent"
             icon="edit"
-            disabled={locked || readOnly}
-            onClick={onEditDk}
+            className={readOnly ? 'locked-action' : undefined}
+            disabled={locked}
+            onClick={readOnly ? explain('edit') : onEditDk}
             tooltip={readOnly ? SYSTEM_KEY_HINT : 'Edit Domain Key'}
           />
           <Button
             design="Transparent"
             icon="delete"
-            disabled={locked || readOnly}
-            onClick={onDeleteDk}
+            className={readOnly ? 'locked-action' : undefined}
+            disabled={locked}
+            onClick={readOnly ? explain('delete') : onDeleteDk}
             tooltip={readOnly ? SYSTEM_KEY_HINT : 'Delete Domain Key'}
           />
         </>
       }
     >
+      <Popover
+        opener={explained?.opener}
+        open={Boolean(explained)}
+        placement="Bottom"
+        onClose={() => setExplained(null)}
+      >
+        <span className="locked-reason">
+          <Icon name="message-warning" />
+          {`To ${explained?.verb ?? 'change'} a System key, select all namespaces.`}
+        </span>
+      </Popover>
       <ProblemStrip
         ready={conditionByType(domainKey.status?.conditions, 'Ready')}
         context={{ kind: 'Domain Key', linked: Boolean(primary) }}
       />
       <div className="key-facts">
-        <Fact area="id" label="Key ID">
-          <CopyableId id={domainKey.status?.cryptoState?.id} />
-        </Fact>
-        <Fact area="parent" label="Parent Root Key">
+        <Fact area="primary" label="Parent Root Key">
           {primaryRk ? (
             <KeyRef
               lead={<ProviderIcon kind={primaryRk.kind} size="S" />}
@@ -1204,8 +1234,6 @@ const DomainKeyDetails = ({
             'Not linked'
           )}
         </dd>
-        <dt>Key ID</dt>
-        <dd><CopyableId id={crypto?.id} /></dd>
         <dt>Version</dt>
         <dd>{crypto?.version ?? '-'}</dd>
         <dt>Last rotated</dt>
@@ -1240,7 +1268,6 @@ const DomainKeyDetails = ({
                 <th>Name</th>
                 <th>Namespace</th>
                 <th>Status</th>
-                <th>Key ID</th>
                 <th className="detail-table-count">Data Keys</th>
               </tr>
             </thead>
@@ -1257,7 +1284,6 @@ const DomainKeyDetails = ({
                         : <span className="muted">Account</span>}
                     </td>
                     <td><StatusPill state={lifecycleObjectState(skLifecycle)}>{skLifecycle}</StatusPill></td>
-                    <td><CopyableId id={sk.status?.cryptoState?.id} /></td>
                     <td className="detail-table-count">{dataKeyCount(sk)}</td>
                   </tr>
                 );
